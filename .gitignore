@@ -1,0 +1,29 @@
+# Binary Files
+udemy-notes
+notes-cli
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Environment Variables
+.env
+
+# Test results
+*.test
+*.out
+*.txt
+
+# Data Files (Local Storage)
+notes.json
+*.tmp
+
+# IDE / Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependency directories (though Go modules are used, it's good practice)
+vendor/
