@@ -101,6 +101,7 @@ cat transcript.txt | ./notes-cli \
 | `--title` | `-t` | *(required)* | Video/lecture title |
 | `--output` | `-o` | `notes.json` | Path to the JSON notes file |
 | `--api-key` | `-k` | `$GROQ_API_KEY` | Groq API key |
+| `--help` | `-h` | `false` | Display help message |
 | `--clear` | | `false` | Clear the notes JSON file |
 
 ---
