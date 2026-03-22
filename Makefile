@@ -4,7 +4,8 @@ build:
 	go build -o notes-cli
 
 install: build
-	cp notes-cli /usr/local/bin/notes-cli
+	sudo cp notes-cli /usr/local/bin/notes-cli
 
 uninstall:
-	rm -f /usr/local/bin/notes-cli
+	sudo rm -f /usr/local/bin/notes-cli
+	rm -f /usr/local/bin/.env

@@ -14,17 +14,22 @@ import (
 func main() {
 	_ = godotenv.Load() // Setup .env file if it exists
 
-	// Custom Usage/Help
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "NOTES CLI - Groq Edition\n")
 		fmt.Fprintf(os.Stderr, "=========================\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n")
 		fmt.Fprintf(os.Stderr, "  cat transcript.txt | ./notes-cli [flags]\n\n")
-		fmt.Fprintf(os.Stderr, "Flags:\n")
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  cat transcript.txt | ./notes-cli -c \"Go Bootcamp\" -t \"Interfaces\"\n")
-		fmt.Fprintf(os.Stderr, "  ./notes-cli --clear\n")
+		fmt.Fprintf(os.Stderr, "Required Flags:\n")
+		fmt.Fprintf(os.Stderr, "  -c, --course string     Course name\n")
+		fmt.Fprintf(os.Stderr, "  -t, --title string      Lecture title\n")
+		fmt.Fprintf(os.Stderr, "  -k, --api-key string    Groq API Key (Required if GROQ_API_KEY env not set)\n\n")
+		fmt.Fprintf(os.Stderr, "Optional Flags:\n")
+		fmt.Fprintf(os.Stderr, "  -jt, --joplin-token string  Joplin Web Clipper Token (Enables Joplin sync)\n")
+		fmt.Fprintf(os.Stderr, "  -m, --model string          Groq AI Model (default \"llama-3.3-70b-versatile\")\n")
+		fmt.Fprintf(os.Stderr, "  -o, --output string         JSON file path (default \"notes.json\")\n")
+		fmt.Fprintf(os.Stderr, "  --clear                     Clear existing notes file\n\n")
+		fmt.Fprintf(os.Stderr, "Examples:\n")
+		fmt.Fprintf(os.Stderr, "  cat transcript.txt | ./notes-cli -c \"Go\" -t \"Interfaces\"\n")
 	}
 
 	// Startup Banner (ASCII Style)
@@ -40,22 +45,70 @@ func main() {
 	fmt.Fprintf(os.Stderr, "  🚀 Groq-Powered Note Intelligence 🚀\n")
 	fmt.Fprintln(os.Stderr, "--------------------------------------------")
 
-	course := flag.String("course", "", "Course name (required for notes)")
-	title := flag.String("title", "", "Video/lecture title (required for notes)")
-	output := flag.String("output", "notes.json", "Path to the JSON notes file")
-	apiKey := flag.String("api-key", "", "Groq API key")
-	clear := flag.Bool("clear", false, "Clear the contents of the notes file")
+	// 1. Core Identification
+	course := flag.String("course", "", "Course name")
+	title := flag.String("title", "", "Lecture title")
+
+	// 2. API Keys & Auth
+	apiKey := flag.String("api-key", "", "Groq API Key")
+	joplinToken := flag.String("joplin-token", "", "Joplin Web Clipper Token")
+	model := flag.String("model", "llama-3.3-70b-versatile", "Groq AI Model")
+
+	// 3. Output & Management
+	output := flag.String("output", "notes.json", "JSON output path")
+	clear := flag.Bool("clear", false, "Clear output file")
 
 	// Support short flags
-	flag.StringVar(course, "c", "", "Course name (short)")
-	flag.StringVar(title, "t", "", "Video/lecture title (short)")
-	flag.StringVar(output, "o", "notes.json", "Path to the JSON notes file (short)")
-	flag.StringVar(apiKey, "k", "", "Groq API key (short)")
+	flag.StringVar(course, "c", "", "Course name")
+	flag.StringVar(title, "t", "", "Lecture title")
+	flag.StringVar(apiKey, "k", "", "Groq API Key")
+	flag.StringVar(joplinToken, "jt", "", "Joplin Token")
+	flag.StringVar(model, "m", "llama-3.3-70b-versatile", "Groq AI Model")
+	flag.StringVar(output, "o", "notes.json", "JSON output path")
 
 	flag.Parse()
 
+	// Capture if keys were passed via flags
+	passedApiKey := *apiKey
+	passedJoplinToken := *joplinToken
+
 	if *apiKey == "" {
 		*apiKey = os.Getenv("GROQ_API_KEY")
+	}
+	if *joplinToken == "" {
+		*joplinToken = os.Getenv("JOPLIN_TOKEN")
+	}
+
+	// If both keys were provided via flags, save them to .env to avoid repetition
+	if passedApiKey != "" && passedJoplinToken != "" {
+		// Try to read existing env to avoid wiping other variables (like JOPLIN_PORT)
+		env, _ := godotenv.Read()
+		if env == nil {
+			env = make(map[string]string)
+		}
+
+		updated := false
+		if passedApiKey != "" {
+			env["GROQ_API_KEY"] = passedApiKey
+			updated = true
+		}
+		if passedJoplinToken != "" {
+			env["JOPLIN_TOKEN"] = passedJoplinToken
+			updated = true
+		}
+
+		if updated {
+			err := godotenv.Write(env, ".env")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "⚠️  Warning: Could not save config to .env: %v\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "💾 Configuration saved to .env for future use!\n")
+			}
+		}
+	}
+
+	if *apiKey != "" && *joplinToken != "" {
+		fmt.Fprintf(os.Stderr, "✅ Configuration Loaded: Groq AI & Joplin Sync active.\n\n")
 	}
 
 	storage := NewFileStorage(*output)
@@ -111,7 +164,7 @@ func main() {
 	fmt.Fprintf(os.Stderr, "Generating notes for: %s\n", *title)
 
 	// Call Groq API
-	groqClient := NewGroqClient(*apiKey)
+	groqClient := NewGroqClient(*apiKey, *model)
 	notesJSONStr, err := groqClient.GenerateNotes(transcript)
 	if err != nil {
 		// (B) Prettier Error Explanations
@@ -145,7 +198,7 @@ func main() {
 	fmt.Fprintf(os.Stderr, "Successfully appended notes to %s\n", *output)
 
 	// Joplin Sync logic
-	jClient := NewJoplinClient()
+	jClient := NewJoplinClient(*joplinToken)
 	if jClient != nil {
 		fmt.Fprintf(os.Stderr, "Syncing to Joplin...\n")
 		folderId, err := jClient.GetOrCreateFolder(*course)

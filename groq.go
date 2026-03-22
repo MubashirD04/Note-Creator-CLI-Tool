@@ -39,35 +39,43 @@ type GroqResponse struct {
 
 type GroqClient struct {
 	APIKey string
+	Model  string
 }
 
-func NewGroqClient(apiKey string) *GroqClient {
-	return &GroqClient{APIKey: apiKey}
+func NewGroqClient(apiKey, model string) *GroqClient {
+	if model == "" {
+		model = DefaultModel
+	}
+	return &GroqClient{APIKey: apiKey, Model: model}
 }
 
 func (c *GroqClient) GenerateNotes(transcript string) (string, error) {
-	systemPrompt := `You are an expert technical assistant. Your task is to output structured JSON notes based *only* on the provided lecture transcript. Do not add any conversational text.
+	systemPrompt := `You are an expert technical assistant. Your task is to output highly detailed and structured JSON notes based *only* on the provided lecture transcript. 
 
 You MUST respond strictly in pure JSON format, matching this exact structure:
 {
-  "summary": "A brief 2-3 sentence overview of the lecture.",
+  "summary": "A concise 1-2 sentence high-level overview of the primary topic covered.",
   "key_concepts": [
     {
-      "term": "Name of the concept",
-      "definition": "Clear, concise definition of this concept based on the transcript"
+      "term": "Technical term, Annotation, or Pattern (e.g., @Service, POJO, Facade)",
+      "definition": "An exhaustive explanation of what this is and how it was used in the specific context of the lecture."
     }
   ],
-  "detailed_notes": "Detailed explanations outlining the core ideas...",
+  "detailed_notes": "An extremely thorough, granular, and chronological breakdown of the lecture. This section should be exhaustive, capturing step-by-step implementation details, architectural 'whys', pros/cons, comparisons, and any pro-tips or warnings from the instructor. This MUST be the most extensive part of the JSON.",
   "code_examples": [
-    "Example code block 1"
+    "Clean, formatted code snippets or configuration examples mentioned in the transcript."
   ],
   "action_items": [
-    "Action item 1"
+    "Specific tasks, next steps, or exercises mentioned for the user to perform."
   ]
-}`
+}
+
+CRITICAL CONSTRAINTS:
+1. Provide a minimum of 4 distinct key_concepts. If there are fewer than 4 obvious terms, expand on related architectural patterns or internal logic mentioned.
+2. The detailed_notes must be dense and informative, avoiding broad generalizations in favor of specific details found in the transcript.`
 
 	reqBody := GroqRequest{
-		Model: DefaultModel,
+		Model: c.Model,
 		Messages: []GroqMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: transcript},

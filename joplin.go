@@ -14,8 +14,7 @@ type JoplinClient struct {
 	URL   string
 }
 
-func NewJoplinClient() *JoplinClient {
-	token := os.Getenv("JOPLIN_TOKEN")
+func NewJoplinClient(token string) *JoplinClient {
 	if token == "" {
 		return nil
 	}
