@@ -4,8 +4,10 @@ A fast Go CLI that takes a lecture transcript from stdin, generates structured A
 
 ## Key Features
 
-- **Groq Llama 3.3 Power:** Uses the latest high-performance versatile models.
+- **Groq Llama 3.3 Power:** Uses the latest high-performance versatile models (128k context).
+- **In-Depth Technical Notes:** Optimized prompts for exhaustive summaries, granular steps, and detailed key concepts (min. 4).
 - **Joplin Integration:** Automatic notebook creation and Markdown note syncing.
+- **Auto-Config Persistence:** Pass your keys once via flags, and they are automatically saved to `.env`.
 - **Smart Note Templates:** Notes include a **Table of Contents**, metadata, and tags.
 - **Safety Measures:** Size warnings for large transcripts and atomic JSON writes.
 - **One-File Database:** All your course notes in one `notes.json`, easily queryable with `jq`.
@@ -30,14 +32,14 @@ cd notes-cli
 # 2. Download dependencies
 go mod tidy
 
-# 3. Create a .env file
-# Add your API keys:
-echo "GROQ_API_KEY=your_key_here" > .env
-echo "JOPLIN_TOKEN=your_joplin_token_here" >> .env
-
-# 4. Build the binary
+# 3. Build the binary
 make build
 # → produces ./notes-cli
+
+# 4. (Optional) Run once with keys to auto-create .env
+# Replace with your actual keys:
+./notes-cli -k "your_groq_key" -jt "your_joplin_token" -c "Setup" -t "Init" < test_transcript.txt
+# → This creates .env for you!
 
 # 5. (Optional) install globally
 make install
@@ -99,8 +101,10 @@ cat transcript.txt | ./notes-cli \
 |------|-------|---------|-------------|
 | `--course` | `-c` | *(required)* | Course name — notes are grouped under this |
 | `--title` | `-t` | *(required)* | Video/lecture title |
+| `--api-key` | `-k` | `$GROQ_API_KEY` | Groq API key (Required if env not set) |
+| `--joplin-token` | `-jt` | `$JOPLIN_TOKEN` | Joplin Web Clipper Token |
+| `--model` | `-m` | `llama-3.3-70b-versatile` | Groq AI Model to use |
 | `--output` | `-o` | `notes.json` | Path to the JSON notes file |
-| `--api-key` | `-k` | `$GROQ_API_KEY` | Groq API key |
 | `--help` | `-h` | `false` | Display help message |
 | `--clear` | | `false` | Clear the notes JSON file |
 
