@@ -34,7 +34,7 @@ go mod tidy
 
 # 3. Build the binary
 make build
-# → produces ./notes-cli
+# → produces ./notes-cli or notes-cli (globally installed)
 
 # 4. (Optional) Run once with keys to auto-create .env
 # Replace with your actual keys:
@@ -62,13 +62,13 @@ Or pass it per-command with `--api-key`.
 
 ```bash
 # Example Run
-cat transcript.txt | ./notes-cli --course "Go Concurrency" --title "WaitGroups"
+cat transcript.txt | notes-cli --course "Go Concurrency" --title "WaitGroups"
 ```
 
 ### Reset the notes database
 
 ```bash
-./notes-cli --clear
+notes-cli --clear
 ```
 
 **What happens next?**
@@ -81,7 +81,7 @@ cat transcript.txt | ./notes-cli --course "Go Concurrency" --title "WaitGroups"
 ### Specify a custom notes file
 
 ```bash
-cat transcript.txt | ./notes-cli \
+cat transcript.txt | notes-cli \
   -c "Go Bootcamp" \
   -t "Channels" \
   -o ~/notes/go_bootcamp.json
