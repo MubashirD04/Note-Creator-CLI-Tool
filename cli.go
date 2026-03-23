@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
 )
 
@@ -23,6 +24,11 @@ type CLIOptions struct {
 
 func RunInteractiveWizard() (CLIOptions, error) {
 	var opts CLIOptions
+
+	// Setup Blue Theme
+	blue := lipgloss.Color("33") // Nice bright blue
+	theme := huh.ThemeCharm()
+	theme.Focused.Title = theme.Focused.Title.Foreground(blue)
 
 	// Load defaults from environment variables
 	opts.APIKey = os.Getenv("GROQ_API_KEY")
@@ -155,7 +161,7 @@ func RunInteractiveWizard() (CLIOptions, error) {
 		).WithHideFunc(func() bool {
 			return !configureOptional
 		}),
-	)
+	).WithTheme(theme)
 
 	err := form.Run()
 	if err != nil {
