@@ -6,8 +6,9 @@ A fast Go CLI that takes a lecture transcript from stdin, generates structured A
 
 - **Groq Llama 3.3 Power:** Uses the latest high-performance versatile models (128k context).
 - **In-Depth Technical Notes:** Optimized prompts for exhaustive summaries, granular steps, and detailed key concepts (min. 4).
+- **Interactive Wizard:** Don't want to remember flags? Run the CLI without arguments to launch a guided, beautiful interactive UI!
 - **Joplin Integration:** Automatic notebook creation and Markdown note syncing.
-- **Auto-Config Persistence:** Pass your keys once via flags, and they are automatically saved to `.env`.
+- **Auto-Config Persistence:** Wizard entries and flags are automatically saved to `~/.notes-cli.env` in your home directory, making them available globally.
 - **Smart Note Templates:** Notes include a **Table of Contents**, metadata, and tags.
 - **Safety Measures:** Size warnings for large transcripts and atomic JSON writes.
 - **One-File Database:** All your course notes in one `notes.json`, easily queryable with `jq`.
@@ -36,14 +37,14 @@ go mod tidy
 make build
 # → produces ./notes-cli or notes-cli (globally installed)
 
-# 4. (Optional) Run once with keys to auto-create .env
+# 4. (Optional) Run once with keys to auto-create config
 # Replace with your actual keys:
 ./notes-cli -k "your_groq_key" -jt "your_joplin_token" -c "Setup" -t "Init" < test_transcript.txt
-# → This creates .env for you!
+# → This creates ~/.notes-cli.env for you!
 
 # 5. (Optional) install globally
 make install
-# → copies to /usr/local/bin/notes-cli
+# → copies binary to /usr/local/bin/notes-cli and migrates config to home dir
 ```
 
 ---
@@ -57,6 +58,22 @@ export GROQ_API_KEY=gsk-...
 ```
 
 Or pass it per-command with `--api-key`.
+
+### Interactive Mode (Wizard) ✨
+
+Don't want to remember flags or pipe files? Simply run the CLI without any arguments to launch the interactive wizard!
+
+```bash
+notes-cli
+```
+
+The wizard will smoothly guide you through:
+1. Entering the **Course Name** and **Lecture Title**
+2. Specifying the path to your **transcript file**
+3. Securely entering your Groq API Key and Joplin Token (saved to `~/.notes-cli.env` for future use)
+4. Configuring advanced options like AI model and output path
+
+*Tip: Set `TRANSCRIPT_PATH=/path/to/transcript.txt` in your `~/.notes-cli.env` to set a default file path!*
 
 ### Basic usage — pipe a transcript
 

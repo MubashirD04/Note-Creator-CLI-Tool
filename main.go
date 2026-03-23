@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"path/filepath"
 )
 
 func main() {
-	_ = godotenv.Load() // Setup .env file if it exists
+	envPath := getConfigPath()
+	_ = godotenv.Load(envPath) // Setup .env file from binary location if it exists
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "NOTES CLI - Groq Edition\n")
@@ -68,6 +70,49 @@ func main() {
 
 	flag.Parse()
 
+	// Check if data is being piped to stdin
+	stat, _ := os.Stdin.Stat()
+	isPiped := (stat.Mode() & os.ModeCharDevice) == 0
+
+	var transcript string
+
+	// Trigger interactive mode if not piped and missing required flags
+	if !isPiped && (*course == "" || *title == "") {
+		opts, err := RunInteractiveWizard()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Aborted: %v\n", err)
+			os.Exit(1)
+		}
+
+		*course = opts.Course
+		*title = opts.Title
+		
+		if opts.APIKey != "" {
+			*apiKey = opts.APIKey
+		}
+		if opts.JoplinToken != "" {
+			*joplinToken = opts.JoplinToken
+		}
+		*model = opts.Model
+		
+		if opts.Output != "" {
+			*output = opts.Output
+		}
+		*clear = opts.Clear
+
+		if opts.InputMethod == "paste" {
+			transcript = opts.TranscriptText
+		} else {
+			// Read transcript from file path selected in wizard
+			transcriptBytes, err := os.ReadFile(opts.TranscriptPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error reading transcript file (%s): %v\n", opts.TranscriptPath, err)
+				os.Exit(1)
+			}
+			transcript = string(transcriptBytes)
+		}
+	}
+
 	// Capture if keys were passed via flags
 	passedApiKey := *apiKey
 	passedJoplinToken := *joplinToken
@@ -82,7 +127,8 @@ func main() {
 	// If both keys were provided via flags, save them to .env to avoid repetition
 	if passedApiKey != "" && passedJoplinToken != "" {
 		// Try to read existing env to avoid wiping other variables (like JOPLIN_PORT)
-		env, _ := godotenv.Read()
+		envPath := getConfigPath()
+		env, _ := godotenv.Read(envPath)
 		if env == nil {
 			env = make(map[string]string)
 		}
@@ -98,7 +144,8 @@ func main() {
 		}
 
 		if updated {
-			err := godotenv.Write(env, ".env")
+			envPath := getConfigPath()
+			err := godotenv.Write(env, envPath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "⚠️  Warning: Could not save config to .env: %v\n", err)
 			} else {
@@ -135,17 +182,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Read transcript from stdin
-	transcriptBytes, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
-		os.Exit(1)
-	}
-
-	transcript := string(transcriptBytes)
 	if transcript == "" {
-		fmt.Fprintln(os.Stderr, "Error: transcript is empty. Please pipe a transcript to stdin.")
-		os.Exit(1)
+		// Read transcript from stdin
+		transcriptBytes, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
+			os.Exit(1)
+		}
+		
+		transcript = string(transcriptBytes)
+		if transcript == "" {
+			fmt.Fprintln(os.Stderr, "Error: transcript is empty. Please pipe a transcript to stdin or use interactive mode.")
+			os.Exit(1)
+		}
 	}
 
 	// (A) Token/Character Count Warning
@@ -215,4 +264,12 @@ func main() {
 			}
 		}
 	}
+}
+
+func getConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".env" // fallback to current dir
+	}
+	return filepath.Join(home, ".notes-cli.env")
 }
