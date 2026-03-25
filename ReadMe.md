@@ -7,7 +7,7 @@ A fast Go CLI that takes a lecture transcript from stdin, generates structured A
 - **Groq Llama 3.3 Power:** Uses the latest high-performance versatile models (128k context).
 - **In-Depth Technical Notes:** Optimized prompts for exhaustive summaries, granular steps, and detailed key concepts (min. 4).
 - **Interactive Wizard:** Don't want to remember flags? Run the CLI without arguments to launch a guided, beautiful interactive UI!
-- **Joplin Integration:** Automatic notebook creation and Markdown note syncing.
+- **Joplin Integration:** Automatic notebook discovery, creation, and Markdown note syncing.
 - **Auto-Config Persistence:** Wizard entries and flags are automatically saved to `~/.notes-cli.env` in your home directory, making them available globally.
 - **Smart Note Templates:** Notes include a **Table of Contents**, metadata, and tags.
 - **Safety Measures:** Size warnings for large transcripts and atomic JSON writes.
@@ -68,10 +68,11 @@ notes-cli
 ```
 
 The wizard will smoothly guide you through:
-1. Entering the **Course Name** and **Lecture Title**
-2. Specifying the path to your **transcript file**
-3. Securely entering your Groq API Key and Joplin Token (saved to `~/.notes-cli.env` for future use)
-4. Configuring advanced options like AI model and output path
+1. **Selecting a Course** (Existing Joplin notebooks are automatically fetched for you!)
+2. Entering the **Lecture Title**
+3. Specifying the path to your **transcript file** or pasting it directly
+4. Securely entering your Groq API Key and Joplin Token (saved to `~/.notes-cli.env` for future use)
+5. Configuring advanced options like AI model and output path
 
 *Tip: Set `TRANSCRIPT_PATH=/path/to/transcript.txt` in your `~/.notes-cli.env` to set a default file path!*
 

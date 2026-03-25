@@ -38,32 +38,43 @@ type FoldersResponse struct {
 	HasMore bool           `json:"has_more"`
 }
 
-func (c *JoplinClient) GetOrCreateFolder(title string) (string, error) {
+func (c *JoplinClient) ListFolders() ([]JoplinFolder, error) {
+	var allFolders []JoplinFolder
 	page := 1
 	for {
 		url := fmt.Sprintf("%s/folders?token=%s&page=%d", c.URL, c.Token, page)
 		resp, err := http.Get(url)
 		if err != nil {
-			return "", fmt.Errorf("failed fetching folders: %w", err)
+			return nil, fmt.Errorf("failed fetching folders: %w", err)
 		}
 
 		var fResp FoldersResponse
 		err = json.NewDecoder(resp.Body).Decode(&fResp)
 		resp.Body.Close()
 		if err != nil {
-			return "", fmt.Errorf("failed decoding folders: %w", err)
+			return nil, fmt.Errorf("failed decoding folders: %w", err)
 		}
 
-		for _, item := range fResp.Items {
-			if item.Title == title {
-				return item.ID, nil
-			}
-		}
+		allFolders = append(allFolders, fResp.Items...)
 
 		if !fResp.HasMore {
 			break
 		}
 		page++
+	}
+	return allFolders, nil
+}
+
+func (c *JoplinClient) GetOrCreateFolder(title string) (string, error) {
+	folders, err := c.ListFolders()
+	if err != nil {
+		return "", err
+	}
+
+	for _, item := range folders {
+		if item.Title == title {
+			return item.ID, nil
+		}
 	}
 
 	reqBody := map[string]string{"title": title}

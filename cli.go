@@ -20,6 +20,7 @@ type CLIOptions struct {
 	TranscriptPath string
 	TranscriptText string
 	InputMethod    string
+	JoplinCourse   string
 }
 
 func RunInteractiveWizard() (CLIOptions, error) {
@@ -29,27 +30,53 @@ func RunInteractiveWizard() (CLIOptions, error) {
 	blue := lipgloss.Color("33") // Nice bright blue
 	theme := huh.ThemeCharm()
 	theme.Focused.Title = theme.Focused.Title.Foreground(blue)
+	theme.Blurred.Title = theme.Blurred.Title.Foreground(blue)
 
 	// Load defaults from environment variables
 	opts.APIKey = os.Getenv("GROQ_API_KEY")
 	opts.JoplinToken = os.Getenv("JOPLIN_TOKEN")
 	opts.TranscriptPath = os.Getenv("TRANSCRIPT_PATH")
 	opts.Model = "llama-3.3-70b-versatile"
-	opts.Output = "notes.json"
+	opts.Output = getNotesPath()
 
 	if opts.TranscriptPath == "" {
 		opts.TranscriptPath = "transcript.txt" // default fallback
 	}
+
+	// Fetch existing Joplin folders
+	var courseOptions []huh.Option[string]
+	jClient := NewJoplinClient(opts.JoplinToken)
+	if jClient != nil {
+		folders, err := jClient.ListFolders()
+		if err == nil {
+			for _, f := range folders {
+				courseOptions = append(courseOptions, huh.NewOption(f.Title, f.Title))
+			}
+		}
+	}
+	courseOptions = append(courseOptions, huh.NewOption("Create New Course...", "NEW"))
 
 	var configureOptional bool
 
 	// Define the form steps
 	form := huh.NewForm(
 		// Group 1: Core Details
+		// Group 1: Course Selection (Conditional)
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Select Course").
+				Description("Choose an existing course from Joplin or create a new one.").
+				Options(courseOptions...).
+				Value(&opts.JoplinCourse),
+		).WithHideFunc(func() bool {
+			return len(courseOptions) <= 1
+		}),
+
+		// Group 2: New Course Name (Conditional)
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Course Name").
-				Description("What is the name of the course?").
+				Description("What is the name of the new course?").
 				Value(&opts.Course).
 				Validate(func(s string) error {
 					if s == "" {
@@ -57,6 +84,12 @@ func RunInteractiveWizard() (CLIOptions, error) {
 					}
 					return nil
 				}),
+		).WithHideFunc(func() bool {
+			return opts.JoplinCourse != "NEW" && opts.JoplinCourse != ""
+		}),
+
+		// Group 3: Core Details
+		huh.NewGroup(
 			huh.NewInput().
 				Title("Lecture Title").
 				Description("What is the title of this lecture?").
@@ -166,6 +199,11 @@ func RunInteractiveWizard() (CLIOptions, error) {
 	err := form.Run()
 	if err != nil {
 		return opts, err
+	}
+
+	// Finalize course name
+	if opts.JoplinCourse != "" && opts.JoplinCourse != "NEW" {
+		opts.Course = opts.JoplinCourse
 	}
 
 	// Update .env file based on new keys or transcript path

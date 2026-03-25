@@ -28,7 +28,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Optional Flags:\n")
 		fmt.Fprintf(os.Stderr, "  -jt, --joplin-token string  Joplin Web Clipper Token (Enables Joplin sync)\n")
 		fmt.Fprintf(os.Stderr, "  -m, --model string          Groq AI Model (default \"llama-3.3-70b-versatile\")\n")
-		fmt.Fprintf(os.Stderr, "  -o, --output string         JSON file path (default \"notes.json\")\n")
+		fmt.Fprintf(os.Stderr, "  -o, --output string         JSON file path (default \"~/.notes-cli.json\")\n")
 		fmt.Fprintf(os.Stderr, "  --clear                     Clear existing notes file\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  cat transcript.txt | ./notes-cli -c \"Go\" -t \"Interfaces\"\n")
@@ -57,7 +57,8 @@ func main() {
 	model := flag.String("model", "llama-3.3-70b-versatile", "Groq AI Model")
 
 	// 3. Output & Management
-	output := flag.String("output", "notes.json", "JSON output path")
+	notesDefault := getNotesPath()
+	output := flag.String("output", notesDefault, "JSON output path")
 	clear := flag.Bool("clear", false, "Clear output file")
 
 	// Support short flags
@@ -66,7 +67,7 @@ func main() {
 	flag.StringVar(apiKey, "k", "", "Groq API Key")
 	flag.StringVar(joplinToken, "jt", "", "Joplin Token")
 	flag.StringVar(model, "m", "llama-3.3-70b-versatile", "Groq AI Model")
-	flag.StringVar(output, "o", "notes.json", "JSON output path")
+	flag.StringVar(output, "o", notesDefault, "JSON output path")
 
 	flag.Parse()
 
@@ -272,4 +273,11 @@ func getConfigPath() string {
 		return ".env" // fallback to current dir
 	}
 	return filepath.Join(home, ".notes-cli.env")
+}
+func getNotesPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "notes.json" // fallback to current dir
+	}
+	return filepath.Join(home, ".notes-cli.json")
 }
