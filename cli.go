@@ -7,9 +7,12 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
+	"strings"
 )
 
 type CLIOptions struct {
+	Action         string
+	AskQuery       string
 	Course         string
 	Title          string
 	APIKey         string
@@ -43,134 +46,72 @@ func RunInteractiveWizard() (CLIOptions, error) {
 		opts.TranscriptPath = "transcript.txt" // default fallback
 	}
 
-	// Fetch existing Joplin folders
+	// Fetch existing courses from Joplin AND local notes.json
 	var courseOptions []huh.Option[string]
+	courseMap := make(map[string]bool)
+
 	jClient := NewJoplinClient(opts.JoplinToken)
 	if jClient != nil {
 		folders, err := jClient.ListFolders()
 		if err == nil {
 			for _, f := range folders {
-				courseOptions = append(courseOptions, huh.NewOption(f.Title, f.Title))
+				// Case-insensitive course name lookup
+				found := false
+				for existing := range courseMap {
+					if strings.EqualFold(existing, f.Title) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					courseOptions = append(courseOptions, huh.NewOption(f.Title, f.Title))
+					courseMap[f.Title] = true
+				}
+			}
+		} else {
+			// Provide a gentle warning in the CLI console instead of crashing
+			fmt.Fprintf(os.Stderr, "⚠️  Warning: Could not connect to Joplin (%v).\n", err)
+			fmt.Fprintf(os.Stderr, "   Ensure Joplin is running and Web Clipper is enabled to use course selection.\n\n")
+		}
+	}
+
+	// Also fetch from local JSON if available
+	storage := NewFileStorage(opts.Output)
+	localNotes, err := storage.LoadNotesFile()
+	if err == nil && localNotes.Courses != nil {
+		for cName := range localNotes.Courses {
+			if !courseMap[cName] {
+				courseOptions = append(courseOptions, huh.NewOption(cName, cName))
+				courseMap[cName] = true
 			}
 		}
 	}
 	courseOptions = append(courseOptions, huh.NewOption("Create New Course...", "NEW"))
 
-	var configureOptional bool
 
 	// Define the form steps
 	form := huh.NewForm(
-		// Group 1: Core Details
-		// Group 1: Course Selection (Conditional)
+		// Group 1: Action Selection
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Select Course").
-				Description("Choose an existing course from Joplin or create a new one.").
-				Options(courseOptions...).
-				Value(&opts.JoplinCourse),
-		).WithHideFunc(func() bool {
-			return len(courseOptions) <= 1
-		}),
-
-		// Group 2: New Course Name (Conditional)
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Course Name").
-				Description("What is the name of the new course?").
-				Value(&opts.Course).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("course name is required")
-					}
-					return nil
-				}),
-		).WithHideFunc(func() bool {
-			return opts.JoplinCourse != "NEW" && opts.JoplinCourse != ""
-		}),
-
-		// Group 3: Core Details
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Lecture Title").
-				Description("What is the title of this lecture?").
-				Value(&opts.Title).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("lecture title is required")
-					}
-					return nil
-				}),
-			huh.NewSelect[string]().
-				Title("Transcript Input Method").
+				Title("What would you like to do?").
 				Options(
-					huh.NewOption("File Path", "file"),
-					huh.NewOption("Direct Paste", "paste"),
+					huh.NewOption("Generate / Upload Notes", "upload"),
+					huh.NewOption("Ask a Question", "ask"),
+					huh.NewOption("Sync from Joplin", "sync"),
+					huh.NewOption("Configure Settings", "settings"),
+					huh.NewOption("Exit", "exit"),
 				).
-				Value(&opts.InputMethod),
+				Value(&opts.Action),
 		),
 
-		// Group 2: Transcript Path (Conditional)
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Transcript File Path").
-				Description("Where is the transcript file located?").
-				Value(&opts.TranscriptPath).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("transcript path is required")
-					}
-					if _, err := os.Stat(s); os.IsNotExist(err) {
-						return fmt.Errorf("file does not exist: %s", s)
-					}
-					return nil
-				}),
-		).WithHideFunc(func() bool {
-			return opts.InputMethod != "file"
-		}),
-
-		// Group 3: Transcript Paste (Conditional)
-		huh.NewGroup(
-			huh.NewText().
-				Title("Transcript Content").
-				Description("Paste the lecture transcript here.").
-				Value(&opts.TranscriptText).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("transcript is required")
-					}
-					return nil
-				}),
-		).WithHideFunc(func() bool {
-			return opts.InputMethod != "paste"
-		}),
-
-		// Group 4: API Keys (Only show if missing or explicitly configuring)
+		// Advanced Settings (Conditional)
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Groq API Key").
-				Description("Enter your Groq API Key (will be saved to .env)").
+				Description("Your Groq API Key (saved to .env)").
 				EchoMode(huh.EchoModePassword).
-				Value(&opts.APIKey).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("Groq API Key is required")
-					}
-					return nil
-				}),
-		).WithHideFunc(func() bool {
-			return opts.APIKey != ""
-		}),
-
-		// Group 5: Optional Settings Prompt
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Configure advanced settings?").
-				Description("Joplin Sync, AI Model, Output Path").
-				Value(&configureOptional),
-		),
-
-		// Group 6: Advanced Settings (Conditional)
-		huh.NewGroup(
+				Value(&opts.APIKey),
 			huh.NewInput().
 				Title("Joplin Token (Optional)").
 				Description("Token for Joplin Web Clipper (saved to .env)").
@@ -192,11 +133,130 @@ func RunInteractiveWizard() (CLIOptions, error) {
 				Description("Warning: This will clear the existing output file before saving.").
 				Value(&opts.Clear),
 		).WithHideFunc(func() bool {
-			return !configureOptional
+			return opts.Action != "settings"
 		}),
+
+		// Ask Group (Conditional)
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Your Question").
+				Description("What do you want to ask about your notes?").
+				Value(&opts.AskQuery).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("question is required")
+					}
+					return nil
+				}),
+		).WithHideFunc(func() bool {
+			return opts.Action != "ask"
+		}),
+
+		// Course Selection (Conditional)
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Select Course").
+				Description("Choose an existing course from Joplin or create a new one.").
+				Options(courseOptions...).
+				Value(&opts.JoplinCourse),
+		).WithHideFunc(func() bool {
+			return (opts.Action != "upload" && opts.Action != "ask") || len(courseOptions) <= 1
+		}),
+
+		// New Course Name (Conditional)
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Course Name").
+				Description("What is the name of the new course?").
+				Value(&opts.Course).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("course name is required")
+					}
+					return nil
+				}),
+		).WithHideFunc(func() bool {
+			return (opts.Action != "upload" && opts.Action != "ask") || (opts.JoplinCourse != "NEW" && opts.JoplinCourse != "")
+		}),
+
+		// Core Details
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Lecture Title").
+				Description("What is the title of this lecture?").
+				Value(&opts.Title).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("lecture title is required")
+					}
+					return nil
+				}),
+			huh.NewSelect[string]().
+				Title("Transcript Input Method").
+				Options(
+					huh.NewOption("File Path", "file"),
+					huh.NewOption("Direct Paste", "paste"),
+				).
+				Value(&opts.InputMethod),
+		).WithHideFunc(func() bool {
+			return opts.Action != "upload" && opts.Action != "ask" && opts.Action != "settings"
+		}),
+
+		// Transcript Path (Conditional)
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Transcript File Path").
+				Description("Where is the transcript file located?").
+				Value(&opts.TranscriptPath).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("transcript path is required")
+					}
+					if _, err := os.Stat(s); os.IsNotExist(err) {
+						return fmt.Errorf("file does not exist: %s", s)
+					}
+					return nil
+				}),
+		).WithHideFunc(func() bool {
+			return opts.Action != "upload" || opts.InputMethod != "file"
+		}),
+
+		// Transcript Paste (Conditional)
+		huh.NewGroup(
+			huh.NewText().
+				Title("Transcript Content").
+				Description("Paste the lecture transcript here.").
+				Value(&opts.TranscriptText).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("transcript is required")
+					}
+					return nil
+				}),
+		).WithHideFunc(func() bool {
+			return opts.Action != "upload" || opts.InputMethod != "paste"
+		}),
+
+		// API Keys (Conditional)
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Groq API Key").
+				Description("Enter your Groq API Key (will be saved to .env)").
+				EchoMode(huh.EchoModePassword).
+				Value(&opts.APIKey).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("Groq API Key is required")
+					}
+					return nil
+				}),
+		).WithHideFunc(func() bool {
+			return (opts.Action != "upload" && opts.Action != "ask") || opts.APIKey != ""
+		}),
+
 	).WithTheme(theme)
 
-	err := form.Run()
+	err = form.Run()
 	if err != nil {
 		return opts, err
 	}
@@ -228,12 +288,15 @@ func RunInteractiveWizard() (CLIOptions, error) {
 	}
 
 	if envUpdated {
-		envPath := getConfigPath()
+		envPath = getConfigPath()
 		err := godotenv.Write(env, envPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  Warning: Could not save config to .env: %v\n", err)
+			fmt.Fprintf(os.Stderr, "⚠️  Warning: Could not save config: %v\n", err)
 		} else {
-			fmt.Fprintf(os.Stderr, "💾 Configuration saved to .env for future use!\n")
+			// Update current process env to stay in sync during loops
+			for k, v := range env {
+				os.Setenv(k, v)
+			}
 		}
 	}
 
