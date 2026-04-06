@@ -160,7 +160,7 @@ func RunInteractiveWizard() (CLIOptions, error) {
 				Options(courseOptions...).
 				Value(&opts.JoplinCourse),
 		).WithHideFunc(func() bool {
-			return (opts.Action != "upload" && opts.Action != "ask") || len(courseOptions) <= 1
+			return opts.Action != "upload" || len(courseOptions) <= 1
 		}),
 
 		// New Course Name (Conditional)
@@ -176,7 +176,7 @@ func RunInteractiveWizard() (CLIOptions, error) {
 					return nil
 				}),
 		).WithHideFunc(func() bool {
-			return (opts.Action != "upload" && opts.Action != "ask") || (opts.JoplinCourse != "NEW" && opts.JoplinCourse != "")
+			return opts.Action != "upload" || (opts.JoplinCourse != "NEW" && opts.JoplinCourse != "")
 		}),
 
 		// Core Details
@@ -199,7 +199,7 @@ func RunInteractiveWizard() (CLIOptions, error) {
 				).
 				Value(&opts.InputMethod),
 		).WithHideFunc(func() bool {
-			return opts.Action != "upload" && opts.Action != "ask" && opts.Action != "settings"
+			return opts.Action != "upload"
 		}),
 
 		// Transcript Path (Conditional)
