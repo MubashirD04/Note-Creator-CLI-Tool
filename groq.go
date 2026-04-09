@@ -119,3 +119,65 @@ CRITICAL CONSTRAINTS:
 
 	return groqResp.Choices[0].Message.Content, nil
 }
+
+func (c *GroqClient) AnswerQuestion(notesContext string, question string) (string, error) {
+	systemPrompt := `You are an expert technical assistant and study companion. You are provided with a large set of notes taken by the user. 
+Your task is to answer the user's question directly and concisely, strictly based on the provided notes context.
+If the notes do not contain the answer, politely say so. Do not hallucinate external information.`
+
+	userPrompt := fmt.Sprintf("Notes Context:\n%s\n\nQuestion:\n%s", notesContext, question)
+
+	reqBody := GroqRequest{
+		Model: c.Model,
+		Messages: []GroqMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", GroqAPIURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == 413 || resp.StatusCode == 429 {
+			return "", fmt.Errorf("\n❌ Groq API Limit Reached (Status %d).\n"+
+				"Why: Your notes library (context) is too large for the current model's limit (TPM).\n"+
+				"Requested tokens: %s\n"+
+				"Fixes:\n"+
+				"1. Try a different model (e.g., -m mixtral-8x7b-32768 or gemma-7b-it).\n"+
+				"2. Reduce the size of your notes.json or sync fewer courses.\n"+
+				"3. I am implementing automated context pruning to help with this.\n"+
+				"Original Error: %s", resp.StatusCode, "exceeded", string(bodyBytes))
+		}
+		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var groqResp GroqResponse
+	if err := json.NewDecoder(resp.Body).Decode(&groqResp); err != nil {
+		return "", err
+	}
+
+	if len(groqResp.Choices) == 0 {
+		return "", errors.New("no completion choices returned from Groq")
+	}
+
+	return groqResp.Choices[0].Message.Content, nil
+}

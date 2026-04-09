@@ -1,142 +1,109 @@
 # notes-cli
 
-A fast Go CLI that takes a lecture transcript from stdin, generates structured AI notes using Groq, and appends them to a JSON file grouped by course.
+A high-performance Go CLI that transforms lecture transcripts into structured, detailed AI notes. Grouped by course, synced to Joplin, and searchable via a built-in AI Assistant.
 
-## Key Features
+## ✨ New in v2.0
+- **AI Assistant (`--ask`):** Ask questions about your entire note library. "What are pointers used for?"
+- **Full Joplin Sync (`--sync`):** Lost your `notes.json`? Repopulate it instantly from your Joplin notebooks.
+- **Persistent Interactive Loop:** The CLI now stays open after syncing or asking questions, allowing for a continuous workflow.
+- **Context Pruning:** Smart token management ensures you never hit Groq's TPM limits, even with thousands of notes.
+
+## 🚀 Key Features
 
 - **Groq Llama 3.3 Power:** Uses the latest high-performance versatile models (128k context).
-- **In-Depth Technical Notes:** Optimized prompts for exhaustive summaries, granular steps, and detailed key concepts (min. 4).
-- **Joplin Integration:** Automatic notebook creation and Markdown note syncing.
-- **Auto-Config Persistence:** Pass your keys once via flags, and they are automatically saved to `.env`.
-- **Smart Note Templates:** Notes include a **Table of Contents**, metadata, and tags.
-- **Safety Measures:** Size warnings for large transcripts and atomic JSON writes.
-- **One-File Database:** All your course notes in one `notes.json`, easily queryable with `jq`.
-
-
----
-
-## Requirements
-
-- [Go 1.22+](https://go.dev/dl/)
-- A [Groq API key](https://console.groq.com/keys)
-- (Optional) [Joplin](https://joplinapp.org/) for syncing notes via Web Clipper API
+- **In-Depth Technical Notes:** Optimized prompts for exhaustive summaries, granular implementation steps, and detailed code examples.
+- **Intelligent Q&A:** Query your notes directly. The AI Assistant uses context pruning to find relevant notes and answer your questions accurately.
+- **Interactive Wizard:** Run the CLI without arguments to launch a guided, beautiful interactive UI!
+- **Joplin Integration:** Automatic notebook discovery, folder creation, and high-quality Markdown syncing.
+- **Auto-Config Persistence:** Wizard entries and API keys are automatically saved to `~/.notes-cli.env`.
+- **One-File Database:** All your course notes in one `notes.json`, optimized for offline access and AI querying.
 
 ---
 
-## Setup
+## 🛠️ Setup
 
 ```bash
 # 1. Clone / place the project folder
 cd notes-cli
 
-# 2. Download dependencies
-go mod tidy
-
-# 3. Build the binary
+# 2. Build the binary
 make build
-# → produces ./notes-cli or notes-cli (globally installed)
 
-# 4. (Optional) Run once with keys to auto-create .env
-# Replace with your actual keys:
-./notes-cli -k "your_groq_key" -jt "your_joplin_token" -c "Setup" -t "Init" < test_transcript.txt
-# → This creates .env for you!
-
-# 5. (Optional) install globally
+# 3. (Optional) install globally
 make install
-# → copies to /usr/local/bin/notes-cli
+# → binary: /usr/local/bin/notes-cli
+# → config: ~/.notes-cli.env
 ```
 
 ---
 
-## Usage
+## 💡 Usage
 
-### Set your API key (once)
-
+### Interactive Mode (The Loop) ✨
+Simply run the CLI without any arguments to launch the full-featured interactive dashboard:
 ```bash
-export GROQ_API_KEY=gsk-...
+notes-cli
 ```
+The wizard now supports a **persistent loop**:
+1. **Sync from Joplin**: Repopulate your local database. (Goes back to menu)
+2. **Ask a Question**: Query your notes library. (Goes back to menu)
+3. **Generate Notes**: Upload a new transcript. (Finishes session)
+4. **Exit**: Gracefully close the CLI.
 
-Or pass it per-command with `--api-key`.
-
-### Basic usage — pipe a transcript
-
+### AI Assistant (Q&A)
+Ask questions about your existing notes using your Groq API key:
 ```bash
-# Example Run
-cat transcript.txt | notes-cli --course "Go Concurrency" --title "WaitGroups"
+notes-cli --ask "Explain the difference between Slices and Arrays in Go"
 ```
+*Note: Uses smart context pruning to stay within Groq's Tokens Per Minute (TPM) limits.*
 
-### Reset the notes database
-
+### Full Joplin Sync
+Repopulate your local `notes.json` from your Joplin notes:
 ```bash
-notes-cli --clear
+notes-cli --sync
 ```
+*Tip: Uses a "Delta Sync" strategy—skips redownloading notes already present in your local cache.*
 
-**What happens next?**
-1.  **CLI Banner** is displayed.
-2.  **Groq Llama 3.3** processes the transcript.
-3.  **JSON Entry** is appended to `notes.json`.
-4.  **Joplin Notebook** ("Go Concurrency") is created/found.
-5.  **Joplin Note** is created with a rich Markdown format!
-
-### Specify a custom notes file
-
+### Basic Note Generation
 ```bash
-cat transcript.txt | notes-cli \
-  -c "Go Bootcamp" \
-  -t "Channels" \
-  -o ~/notes/go_bootcamp.json
+cat transcript.txt | notes-cli --course "Go" --title "Interfaces"
 ```
-
-### Paste directly (multi-line, end with Ctrl+D)
-
-```bash
-./notes-cli --course "Go Bootcamp" --title "Interfaces"
-# paste your transcript here...
-# press Ctrl+D when done
-```
-
-### All flags
-
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--course` | `-c` | *(required)* | Course name — notes are grouped under this |
-| `--title` | `-t` | *(required)* | Video/lecture title |
-| `--api-key` | `-k` | `$GROQ_API_KEY` | Groq API key (Required if env not set) |
-| `--joplin-token` | `-jt` | `$JOPLIN_TOKEN` | Joplin Web Clipper Token |
-| `--model` | `-m` | `llama-3.3-70b-versatile` | Groq AI Model to use |
-| `--output` | `-o` | `notes.json` | Path to the JSON notes file |
-| `--help` | `-h` | `false` | Display help message |
-| `--clear` | | `false` | Clear the notes JSON file |
 
 ---
 
-## Output format
+## 🚩 All Flags
 
-Notes are saved to a single JSON file with this structure:
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--course` | `-c` | Course name grouping |
+| `--title` | `-t` | Lecture title |
+| `--ask` | | Ask a question about your notes |
+| `--sync` | | Repopulate local JSON from Joplin |
+| `--api-key` | `-k` | Groq API key (Required if env not set) |
+| `--joplin-token` | `-jt` | Joplin Web Clipper Token |
+| `--model` | `-m` | Groq AI Model (default: `llama-3.3-70b-versatile`) |
+| `--output` | `-o` | Path to the JSON database |
+| `--clear` | | Clear the notes JSON file |
+| `--help` | `-h` | Display help message |
+
+---
+
+## 📄 Output format
+
+Notes are stored in a grouped JSON structure and synced as rich Markdown to Joplin.
 
 ```json
 {
   "courses": {
     "Go Bootcamp": [
       {
-        "title": "Goroutines and WaitGroups",
-        "created_at": "2026-03-22T10:30:00+02:00",
-        "transcript_snippet": "In this lecture we'll cover...",
+        "title": "Goroutines",
+        "created_at": "2026-03-22T...",
         "notes": {
-          "summary": "This lecture covered goroutines as lightweight threads...",
-          "key_concepts": [
-            "Goroutines are cheap — thousands can run concurrently",
-            "sync.WaitGroup tracks in-flight goroutines",
-            "go keyword spawns a goroutine"
-          ],
-          "detailed_notes": "Goroutines are Go's concurrency primitive...",
-          "code_examples": [
-            "var wg sync.WaitGroup\nwg.Add(1)\ngo func() { defer wg.Done(); ... }()\nwg.Wait()"
-          ],
-          "action_items": [
-            "Practice building a worker pool with goroutines",
-            "Read the sync package docs"
-          ]
+          "summary": "...",
+          "key_concepts": [...],
+          "detailed_notes": "...",
+          "code_examples": [...]
         }
       }
     ]
@@ -144,13 +111,15 @@ Notes are saved to a single JSON file with this structure:
 }
 ```
 
-Each new lecture is **appended** to its course — existing notes are never overwritten. The file is written atomically (via a temp file + rename) so it is never corrupted.
+---
+
+## 🧠 Troubleshooting
+
+- **Connection Refused (41184):** Ensure Joplin is running and **Web Clipper API** is enabled in settings.
+- **TPM Limit (413/429):** Your library is large! The tool automatically prunes context, but if you still hit this, try a different model (`-m mixtral-8x7b-32768`).
+- **Empty Database:** Start by generating a note or running `--sync` if you have notes in Joplin.
 
 ---
 
-## Tips
-
-- **Udemy captions** — open DevTools → Network tab → filter `.vtt` while watching a video, copy the caption text and pipe it in.
-- **Multiple courses** — use the same `notes.json` file with different `--course` values; each course gets its own array.
-- **Review your notes** — use `jq` to pretty-print: `jq '.courses["Go Bootcamp"][] | .notes.summary' notes.json`
-- **Uninstall** — remove the global binary with `sudo make uninstall`
+## 🛡️ License
+MIT - Feel free to use and expand!

@@ -8,11 +8,15 @@ import (
 	"os"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
+	"path/filepath"
+	"strings"
 )
 
 func main() {
-	_ = godotenv.Load() // Setup .env file if it exists
+	envPath := getConfigPath()
+	_ = godotenv.Load(envPath) // Setup .env file from binary location if it exists
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "NOTES CLI - Groq Edition\n")
@@ -26,8 +30,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Optional Flags:\n")
 		fmt.Fprintf(os.Stderr, "  -jt, --joplin-token string  Joplin Web Clipper Token (Enables Joplin sync)\n")
 		fmt.Fprintf(os.Stderr, "  -m, --model string          Groq AI Model (default \"llama-3.3-70b-versatile\")\n")
-		fmt.Fprintf(os.Stderr, "  -o, --output string         JSON file path (default \"notes.json\")\n")
-		fmt.Fprintf(os.Stderr, "  --clear                     Clear existing notes file\n\n")
+		fmt.Fprintf(os.Stderr, "  -o, --output string         JSON file path (default \"~/.notes-cli.json\")\n")
+		fmt.Fprintf(os.Stderr, "--clear                     Clear existing notes file\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  cat transcript.txt | ./notes-cli -c \"Go\" -t \"Interfaces\"\n")
 	}
@@ -55,8 +59,13 @@ func main() {
 	model := flag.String("model", "llama-3.3-70b-versatile", "Groq AI Model")
 
 	// 3. Output & Management
-	output := flag.String("output", "notes.json", "JSON output path")
+	notesDefault := getNotesPath()
+	output := flag.String("output", notesDefault, "JSON output path")
 	clear := flag.Bool("clear", false, "Clear output file")
+
+	// 4. Advanced Features
+	askMode := flag.String("ask", "", "Ask a question about your notes")
+	syncMode := flag.Bool("sync", false, "Repopulate notes.json from Joplin")
 
 	// Support short flags
 	flag.StringVar(course, "c", "", "Course name")
@@ -64,155 +73,270 @@ func main() {
 	flag.StringVar(apiKey, "k", "", "Groq API Key")
 	flag.StringVar(joplinToken, "jt", "", "Joplin Token")
 	flag.StringVar(model, "m", "llama-3.3-70b-versatile", "Groq AI Model")
-	flag.StringVar(output, "o", "notes.json", "JSON output path")
+	flag.StringVar(output, "o", notesDefault, "JSON output path")
 
 	flag.Parse()
 
-	// Capture if keys were passed via flags
-	passedApiKey := *apiKey
-	passedJoplinToken := *joplinToken
+	// Check if data is being piped to stdin
+	stat, _ := os.Stdin.Stat()
+	isPiped := (stat.Mode() & os.ModeCharDevice) == 0
+	isInteractive := !isPiped && *askMode == "" && !*syncMode && (*course == "" || *title == "")
 
-	if *apiKey == "" {
-		*apiKey = os.Getenv("GROQ_API_KEY")
-	}
-	if *joplinToken == "" {
-		*joplinToken = os.Getenv("JOPLIN_TOKEN")
-	}
-
-	// If both keys were provided via flags, save them to .env to avoid repetition
-	if passedApiKey != "" && passedJoplinToken != "" {
-		// Try to read existing env to avoid wiping other variables (like JOPLIN_PORT)
-		env, _ := godotenv.Read()
-		if env == nil {
-			env = make(map[string]string)
-		}
-
-		updated := false
-		if passedApiKey != "" {
-			env["GROQ_API_KEY"] = passedApiKey
-			updated = true
-		}
-		if passedJoplinToken != "" {
-			env["JOPLIN_TOKEN"] = passedJoplinToken
-			updated = true
-		}
-
-		if updated {
-			err := godotenv.Write(env, ".env")
+	for {
+		var transcript string
+		if isInteractive {
+			opts, err := RunInteractiveWizard()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "⚠️  Warning: Could not save config to .env: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Aborted: %v\n", err)
+				os.Exit(1)
+			}
+
+			if opts.Action == "exit" {
+				fmt.Fprintln(os.Stderr, "👋 Goodbye!")
+				return
+			}
+
+			*course = opts.Course
+			*title = opts.Title
+			if opts.APIKey != "" {
+				*apiKey = opts.APIKey
+			}
+			if opts.JoplinToken != "" {
+				*joplinToken = opts.JoplinToken
+			}
+			*model = opts.Model
+			if opts.Output != "" {
+				*output = opts.Output
+			}
+			*clear = opts.Clear
+
+			if opts.Action == "upload" {
+				if opts.InputMethod == "paste" {
+					transcript = opts.TranscriptText
+				} else if opts.InputMethod == "file" {
+					transcriptBytes, err := os.ReadFile(opts.TranscriptPath)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Error reading transcript file (%s): %v\n", opts.TranscriptPath, err)
+						continue
+					}
+					transcript = string(transcriptBytes)
+				}
+			}
+
+			if opts.Action == "ask" {
+				*askMode = opts.AskQuery
+				*syncMode = false
+			} else if opts.Action == "sync" {
+				*syncMode = true
+				*askMode = ""
+				fmt.Fprintln(os.Stderr, "") // Space before action
 			} else {
-				fmt.Fprintf(os.Stderr, "💾 Configuration saved to .env for future use!\n")
+				*syncMode = false
+				*askMode = ""
 			}
 		}
-	}
 
-	if *apiKey != "" && *joplinToken != "" {
-		fmt.Fprintf(os.Stderr, "✅ Configuration Loaded: Groq AI & Joplin Sync active.\n\n")
-	}
+		// Keys check
+		if *apiKey == "" {
+			*apiKey = os.Getenv("GROQ_API_KEY")
+		}
+		if *joplinToken == "" {
+			*joplinToken = os.Getenv("JOPLIN_TOKEN")
+		}
 
-	storage := NewFileStorage(*output)
+		storage := NewFileStorage(*output)
 
-	if *clear {
-		fmt.Fprintf(os.Stderr, "🧹 Clearing %s...\n", *output)
-		err := storage.Clear()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error clearing file: %v\n", err)
+		if *clear {
+			fmt.Fprintf(os.Stderr, "Sweep: Cleaning up output file...\n")
+			storage.Clear()
+			if !isInteractive {
+				return
+			}
+			*clear = false
+			continue
+		}
+
+		if *syncMode {
+			fmt.Fprintf(os.Stderr, "🔄 Syncing notes from Joplin...\n")
+			if *joplinToken == "" {
+				fmt.Fprintln(os.Stderr, "Error: Joplin Token is required.")
+			} else {
+				jClient := NewJoplinClient(*joplinToken)
+				folders, err := jClient.ListFolders()
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				} else {
+					existingNotesFile, _ := storage.LoadNotesFile()
+					newNotesFile := NotesFile{Courses: make(map[string][]NoteEntry)}
+					cachedCount := 0
+					for _, folder := range folders {
+						notes, _ := jClient.GetFolderNotes(folder.ID)
+						for _, jNote := range notes {
+							var notesBody interface{}
+							var created string
+							cached := false
+							// Case-insensitive course name lookup
+							var existingEntries []NoteEntry
+							for cachedCourse, entries := range existingNotesFile.Courses {
+								if strings.EqualFold(cachedCourse, folder.Title) {
+									existingEntries = entries
+									break
+								}
+							}
+
+							for _, e := range existingEntries {
+								if strings.EqualFold(e.Title, jNote.Title) {
+									notesBody = e.Notes
+									created = e.CreatedAt
+									cached = true
+									break
+								}
+							}
+							if !cached {
+								nb, _ := jClient.GetNoteBody(jNote.ID)
+								notesBody = nb.Body
+								created = time.UnixMilli(nb.CreatedTime).Format(time.RFC3339)
+							} else {
+								cachedCount++
+							}
+							newNotesFile.Courses[folder.Title] = append(newNotesFile.Courses[folder.Title], NoteEntry{
+								Title:             jNote.Title,
+								CreatedAt:         created,
+								TranscriptSnippet: "Synced",
+								Notes:             notesBody,
+							})
+						}
+					}
+					storage.SaveNotesFile(newNotesFile)
+					fmt.Fprintf(os.Stderr, "✅ Sync Complete (%d cached)\n\n", cachedCount)
+				}
+			}
+			if !isInteractive {
+				return
+			}
+			*syncMode = false
+			continue
+		}
+
+		if *askMode != "" {
+			notesData, _ := storage.LoadNotesFile()
+			filteredNotes := NotesFile{Courses: make(map[string][]NoteEntry)}
+			qLower := strings.ToLower(*askMode)
+			kws := strings.Fields(qLower)
+			for cName, entries := range notesData.Courses {
+				for _, entry := range entries {
+					match := false
+					content := strings.ToLower(entry.Title + " " + cName + " " + entry.TranscriptSnippet)
+					for _, kw := range kws {
+						if len(kw) > 2 && strings.Contains(content, kw) {
+							match = true
+							break
+						}
+					}
+					if match {
+						filteredNotes.Courses[cName] = append(filteredNotes.Courses[cName], entry)
+					}
+				}
+			}
+			cBytes, _ := json.MarshalIndent(filteredNotes, "", "  ")
+			if len(cBytes) > 50 {
+				groqClient := NewGroqClient(*apiKey, *model)
+				answer, _ := groqClient.AnswerQuestion(string(cBytes), *askMode)
+				fmt.Fprintf(os.Stdout, "\n--- ANSWER ---\n%s\n\n", answer)
+			} else {
+				fmt.Fprintln(os.Stderr, "No relevant notes found.")
+			}
+			if !isInteractive {
+				return
+			}
+			*askMode = ""
+			continue
+		}
+
+		// Default: Upload/Generate
+		if *course == "" || *title == "" || *apiKey == "" {
+			if isInteractive {
+				continue
+			}
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stderr, "Successfully cleared %s\n", *output)
-		os.Exit(0)
-	}
 
-	if *course == "" || *title == "" {
-		fmt.Fprintln(os.Stderr, "Error: --course and --title are required.")
-		flag.Usage()
-		os.Exit(1)
-	}
+		if transcript == "" && !isInteractive {
+			tb, _ := io.ReadAll(os.Stdin)
+			transcript = string(tb)
+		}
 
-	if *apiKey == "" {
-		fmt.Fprintln(os.Stderr, "Error: GROQ_API_KEY environment variable or --api-key flag is required.")
-		os.Exit(1)
-	}
+		if transcript != "" {
+			statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Bold(true)
+			statusMsg := fmt.Sprintf("%s %s > %s...", statusStyle.Render("🚀 Generating:"), *course, *title)
+			
+			// Simple Spinner Implementation
+			done := make(chan bool)
+			go func() {
+				frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+				i := 0
+				for {
+					select {
+					case <-done:
+						return
+					default:
+						fmt.Fprintf(os.Stderr, "\r%s %s", frames[i], statusMsg)
+						i = (i + 1) % len(frames)
+						time.Sleep(100 * time.Millisecond)
+					}
+				}
+			}()
 
-	// Read transcript from stdin
-	transcriptBytes, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
-		os.Exit(1)
-	}
+			groqClient := NewGroqClient(*apiKey, *model)
+			notesJSON, generateErr := groqClient.GenerateNotes(transcript)
+			done <- true
+			fmt.Fprintf(os.Stderr, "\r\033[2K") // Clear the spinner line
 
-	transcript := string(transcriptBytes)
-	if transcript == "" {
-		fmt.Fprintln(os.Stderr, "Error: transcript is empty. Please pipe a transcript to stdin.")
-		os.Exit(1)
-	}
 
-	// (A) Token/Character Count Warning
-	charCount := len(transcript)
-	fmt.Fprintf(os.Stderr, "Transcript size: %d characters\n", charCount)
-	if charCount > 50000 {
-		fmt.Fprintf(os.Stderr, "⚠️  Warning: Large transcript detected. This might exceed API limits.\n")
-	}
+			if generateErr == nil {
+				var notesObj map[string]interface{}
+				json.Unmarshal([]byte(notesJSON), &notesObj)
+				entry := NoteEntry{
+					Title:             *title,
+					CreatedAt:         time.Now().Format(time.RFC3339),
+					TranscriptSnippet: "Generated",
+					Notes:             notesObj,
+				}
+				storage.UpdateNotes(*course, entry)
+				fmt.Fprintf(os.Stderr, "✅ Success: %s > %s\n\n", *course, *title)
 
-	snippetLen := 50
-	if len(transcript) < snippetLen {
-		snippetLen = len(transcript)
-	}
-	snippet := transcript[:snippetLen] + "..."
-
-	fmt.Fprintf(os.Stderr, "Generating notes for: %s\n", *title)
-
-	// Call Groq API
-	groqClient := NewGroqClient(*apiKey, *model)
-	notesJSONStr, err := groqClient.GenerateNotes(transcript)
-	if err != nil {
-		// (B) Prettier Error Explanations
-		fmt.Fprintf(os.Stderr, "\n❌ FAILED TO GENERATE NOTES\n")
-		fmt.Fprintf(os.Stderr, "-------------------------------\n")
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		fmt.Fprintf(os.Stderr, "-------------------------------\n")
-		os.Exit(1)
-	}
-
-	var notesObj map[string]interface{}
-	if err := json.Unmarshal([]byte(notesJSONStr), &notesObj); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing Groq response as JSON: %v\nResponse: %s\n", err, notesJSONStr)
-		os.Exit(1)
-	}
-
-	entry := NoteEntry{
-		Title:             *title,
-		CreatedAt:         time.Now().Format(time.RFC3339),
-		TranscriptSnippet: snippet,
-		Notes:             notesObj,
-	}
-
-	// Read and update the notes file
-	err = storage.UpdateNotes(*course, entry)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error updating notes file: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Fprintf(os.Stderr, "Successfully appended notes to %s\n", *output)
-
-	// Joplin Sync logic
-	jClient := NewJoplinClient(*joplinToken)
-	if jClient != nil {
-		fmt.Fprintf(os.Stderr, "Syncing to Joplin...\n")
-		folderId, err := jClient.GetOrCreateFolder(*course)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to get or create Joplin folder: %v\n", err)
-		} else {
-			formatter := NewMarkdownFormatter()
-			mdBody := formatter.FormatNote(entry, *course)
-			err = jClient.CreateNote(entry.Title, mdBody, folderId)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to sync note to Joplin: %v\n", err)
+				// Sync back to Joplin
+				jClient := NewJoplinClient(*joplinToken)
+				if jClient != nil {
+					fId, _ := jClient.GetOrCreateFolder(*course)
+					formatter := NewMarkdownFormatter()
+					jClient.CreateNote(entry.Title, formatter.FormatNote(entry, *course), fId)
+				}
 			} else {
-				fmt.Fprintf(os.Stderr, "Successfully synced note '%s' to Joplin!\n", entry.Title)
+				fmt.Fprintf(os.Stderr, "Error: %v\n", generateErr)
 			}
 		}
+
+		if !isInteractive {
+			return
+		}
+		// Reset for next interaction
+		*course = ""
+		*title = ""
 	}
+}
+
+func getConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".env" // fallback to current dir
+	}
+	return filepath.Join(home, ".notes-cli.env")
+}
+func getNotesPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "notes.json" // fallback to current dir
+	}
+	return filepath.Join(home, ".notes-cli.json")
 }

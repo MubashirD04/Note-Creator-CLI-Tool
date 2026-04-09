@@ -1,6 +1,7 @@
 # Binary Files
 udemy-notes
 notes-cli
+Context.md
 *.exe
 *.exe~
 *.dll
