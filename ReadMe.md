@@ -23,18 +23,41 @@ A high-performance Go CLI that transforms lecture transcripts into structured, d
 
 ## Setup
 
+### 🚀 Easy Install (Recommended)
+
+Choose the command for your OS to build and install `notes-cli` globally:
+
+**Mac / Linux:**
 ```bash
-# 1. Clone / place the project folder
-cd notes-cli
-
-# 2. Build the binary
-make build
-
-# 3. (Optional) install globally
-make install
-# → binary: /usr/local/bin/notes-cli
-# → config: ~/.notes-cli.env
+bash scripts/install.sh
 ```
+
+**Windows (PowerShell):**
+```powershell
+.\scripts\install.ps1
+```
+
+---
+
+### 🛠️ Manual Installation (Go way)
+
+If you have Go installed, you can simply run:
+
+```bash
+go install .
+```
+*Note: This will install the binary as `udemy-notes` (based on module name) to your `$GOPATH/bin`.*
+
+---
+
+### 🏗️ Build from Source
+
+If you just want to build the binary in the current directory:
+
+```bash
+go build -o notes-cli
+```
+
 
 ---
 

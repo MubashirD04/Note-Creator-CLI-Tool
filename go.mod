@@ -1,4 +1,4 @@
-module udemy-notes
+module notes-cli
 
 go 1.26.1
 
