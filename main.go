@@ -8,10 +8,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/joho/godotenv"
 	"path/filepath"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -46,7 +47,7 @@ func main() {
                                                     
 `
 	fmt.Fprintln(os.Stderr, banner)
-	fmt.Fprintf(os.Stderr, "  🚀 Groq-Powered Note Intelligence 🚀\n")
+	fmt.Fprintf(os.Stderr, "  Groq-Powered Note Intelligence \n")
 	fmt.Fprintln(os.Stderr, "--------------------------------------------")
 
 	// 1. Core Identification
@@ -269,7 +270,7 @@ func main() {
 		if transcript != "" {
 			statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Bold(true)
 			statusMsg := fmt.Sprintf("%s %s > %s...", statusStyle.Render("🚀 Generating:"), *course, *title)
-			
+
 			// Simple Spinner Implementation
 			done := make(chan bool)
 			go func() {
@@ -291,7 +292,6 @@ func main() {
 			notesJSON, generateErr := groqClient.GenerateNotes(transcript)
 			done <- true
 			fmt.Fprintf(os.Stderr, "\r\033[2K") // Clear the spinner line
-
 
 			if generateErr == nil {
 				var notesObj map[string]interface{}
