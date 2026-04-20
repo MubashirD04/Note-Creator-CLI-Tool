@@ -112,7 +112,7 @@ func main() {
 			*clear = opts.Clear
 
 			if opts.Action == "upload" {
-				if opts.InputMethod == "paste" {
+				if opts.InputMethod == "paste" || opts.InputMethod == "clipboard" {
 					transcript = opts.TranscriptText
 				} else if opts.InputMethod == "file" {
 					transcriptBytes, err := os.ReadFile(opts.TranscriptPath)

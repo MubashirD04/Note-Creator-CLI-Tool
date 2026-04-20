@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
@@ -20,10 +21,11 @@ type CLIOptions struct {
 	Model          string
 	Output         string
 	Clear          bool
-	TranscriptPath string
-	TranscriptText string
-	InputMethod    string
-	JoplinCourse   string
+	TranscriptPath   string
+	TranscriptText   string
+	InputMethod      string
+	JoplinCourse     string
+	ConfirmClipboard bool
 }
 
 func RunInteractiveWizard() (CLIOptions, error) {
@@ -196,6 +198,7 @@ func RunInteractiveWizard() (CLIOptions, error) {
 				Options(
 					huh.NewOption("File Path", "file"),
 					huh.NewOption("Direct Paste", "paste"),
+					huh.NewOption("From Clipboard", "clipboard"),
 				).
 				Value(&opts.InputMethod),
 		).WithHideFunc(func() bool {
@@ -225,8 +228,9 @@ func RunInteractiveWizard() (CLIOptions, error) {
 		huh.NewGroup(
 			huh.NewText().
 				Title("Transcript Content").
-				Description("Paste the lecture transcript here.").
+				Description("Paste the lecture transcript here. Tip: Use 'From Clipboard' for large transcripts on Windows.").
 				Value(&opts.TranscriptText).
+				Lines(12).
 				Validate(func(s string) error {
 					if s == "" {
 						return fmt.Errorf("transcript is required")
@@ -235,6 +239,16 @@ func RunInteractiveWizard() (CLIOptions, error) {
 				}),
 		).WithHideFunc(func() bool {
 			return opts.Action != "upload" || opts.InputMethod != "paste"
+		}),
+
+		// Clipboard Confirmation (Conditional)
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Load from Clipboard?").
+				Description("This will read the current text from your system clipboard.").
+				Value(&opts.ConfirmClipboard),
+		).WithHideFunc(func() bool {
+			return opts.Action != "upload" || opts.InputMethod != "clipboard"
 		}),
 
 		// API Keys (Conditional)
@@ -264,6 +278,18 @@ func RunInteractiveWizard() (CLIOptions, error) {
 	// Finalize course name
 	if opts.JoplinCourse != "" && opts.JoplinCourse != "NEW" {
 		opts.Course = opts.JoplinCourse
+	}
+
+	// Handle clipboard input
+	if opts.InputMethod == "clipboard" && opts.ConfirmClipboard {
+		text, err := clipboard.ReadAll()
+		if err != nil {
+			return opts, fmt.Errorf("failed to read clipboard: %v", err)
+		}
+		if text == "" {
+			return opts, fmt.Errorf("clipboard is empty")
+		}
+		opts.TranscriptText = text
 	}
 
 	// Update .env file based on new keys or transcript path
