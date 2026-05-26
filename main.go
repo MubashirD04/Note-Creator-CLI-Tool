@@ -165,7 +165,7 @@ func main() {
 				jClient := NewJoplinClient(*joplinToken)
 				folders, err := jClient.ListFolders()
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "ℹ️  Reminder: Joplin is not open. Please open Joplin to sync.\n")
 				} else {
 					existingNotesFile, _ := storage.LoadNotesFile()
 					newNotesFile := NotesFile{Courses: make(map[string][]NoteEntry)}
@@ -208,8 +208,32 @@ func main() {
 							})
 						}
 					}
+
+					// Push missing local notes to Joplin
+					formatter := NewMarkdownFormatter()
+					uploadedCount := 0
+					for cName, entries := range existingNotesFile.Courses {
+						for _, e := range entries {
+							found := false
+							for _, ne := range newNotesFile.Courses[cName] {
+								if strings.EqualFold(ne.Title, e.Title) {
+									found = true
+									break
+								}
+							}
+							if !found {
+								fId, err := jClient.GetOrCreateFolder(cName)
+								if err == nil {
+									jClient.CreateNote(e.Title, formatter.FormatNote(e, cName), fId)
+									newNotesFile.Courses[cName] = append(newNotesFile.Courses[cName], e)
+									uploadedCount++
+								}
+							}
+						}
+					}
+
 					storage.SaveNotesFile(newNotesFile)
-					fmt.Fprintf(os.Stderr, "✅ Sync Complete (%d cached)\n\n", cachedCount)
+					fmt.Fprintf(os.Stderr, "✅ Sync Complete (%d cached, %d uploaded to Joplin)\n\n", cachedCount, uploadedCount)
 				}
 			}
 			if !isInteractive {
@@ -308,9 +332,11 @@ func main() {
 				// Sync back to Joplin
 				jClient := NewJoplinClient(*joplinToken)
 				if jClient != nil {
-					fId, _ := jClient.GetOrCreateFolder(*course)
-					formatter := NewMarkdownFormatter()
-					jClient.CreateNote(entry.Title, formatter.FormatNote(entry, *course), fId)
+					fId, err := jClient.GetOrCreateFolder(*course)
+					if err == nil {
+						formatter := NewMarkdownFormatter()
+						jClient.CreateNote(entry.Title, formatter.FormatNote(entry, *course), fId)
+					}
 				}
 			} else {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", generateErr)

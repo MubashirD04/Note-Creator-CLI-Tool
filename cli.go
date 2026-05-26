@@ -71,9 +71,8 @@ func RunInteractiveWizard() (CLIOptions, error) {
 				}
 			}
 		} else {
-			// Provide a gentle warning in the CLI console instead of crashing
-			fmt.Fprintf(os.Stderr, "⚠️  Warning: Could not connect to Joplin (%v).\n", err)
-			fmt.Fprintf(os.Stderr, "   Ensure Joplin is running and Web Clipper is enabled to use course selection.\n\n")
+			// Provide a gentle reminder in the CLI console instead of crashing
+			fmt.Fprintf(os.Stderr, "ℹ️  Reminder: Joplin is not open. Syncing is disabled for this session, but notes will be saved locally.\n\n")
 		}
 	}
 
