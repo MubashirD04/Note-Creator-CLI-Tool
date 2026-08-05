@@ -7,7 +7,7 @@ use std::env;
 mod config;
 mod api;
 use api::summarize_text;
-use config::{save_destination_path, load_destination_path, get_config_path};
+use config::{save_config, load_config, get_config_path};
 
 //------CLI
 #[derive(Parser)]
@@ -42,7 +42,7 @@ enum Commands {
     },
 
     /// Set and persist the default output path
-    SetPath { path: Option<String> },
+    SetPath { path: String },
     
     /// Completely uninstall notes-cli and remove user configurations
     Uninstall,
@@ -65,7 +65,7 @@ fn list_md_files(dir: &str) -> io::Result<()> {
 fn create_md_note(dir: &str, title: &str, body: &str, tags: Option<Vec<String>>) -> io::Result<()> {
     fs::create_dir_all(dir)?;
 
-    let filename = format!("{}/{}.md", dir, title);
+    let filename = format!("{}\\{}.md", dir, title);
     let mut file = File::create(&filename)?;
 
     let formatted_tags = match tags {
@@ -122,16 +122,10 @@ async fn main() -> io::Result<()> {
 
     match cli.command {
         Commands::SetPath { path } => {
-            let target_path = match path {
-                Some(p) => p,
-                None => {
-                    eprintln!("{}", "Error: Please provide a path to set!".red());
-                    return Ok(());
-                }
-            };
-
-            save_destination_path(&target_path)?;
-            println!("Default path saved as: {}", target_path.green());
+            let mut config = load_config();
+            config.destination_path = path.clone();
+            save_config(&config)?;
+            println!("Default path saved as: {}", path.green());
         }
         Commands::Add {
             title,
@@ -140,7 +134,7 @@ async fn main() -> io::Result<()> {
             path,
             summarize,
         } => {
-            let output_dir = path.unwrap_or_else(load_destination_path);
+            let output_dir = path.unwrap_or_else(|| load_config().destination_path);
 
             let mut content_body = match body {
                 Some(b) => b,

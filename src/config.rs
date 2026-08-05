@@ -1,10 +1,11 @@
+use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Config {
+pub struct Config {
     pub destination_path: String,
     pub groq_api_key: Option<String>,
 }
@@ -42,7 +43,7 @@ pub fn save_config(config: &Config) -> io::Result<()> {
     Ok(())
 }
 
-pub fn load_destination_path() -> Config {
+pub fn load_config() -> Config {
     let default_config = Config {
         destination_path: "D:/Notes".to_string(),
         groq_api_key: None,
@@ -55,4 +56,25 @@ pub fn load_destination_path() -> Config {
         return default_config;
     };
     serde_json::from_str(&content).unwrap_or(default_config)
+}
+
+pub fn get_or_prompt_groq_key() -> io::Result<String> {
+    let mut config = load_config();
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let api_key = input.trim().to_string();
+
+    if api_key.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Api Cannot be empty.",
+        ));
+    }
+
+    config.groq_api_key = Some(api_key.clone());
+    save_config(&config)?;
+    println!("{}", "Groq API key saved successfully!".green());
+
+    Ok(api_key)
 }

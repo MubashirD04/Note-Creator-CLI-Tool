@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::env;
+use crate::config::{get_or_prompt_groq_key};
 
 #[derive(Serialize)]
 struct ChatMessage {
@@ -31,10 +31,7 @@ struct GroqResponse {
 }
 
 pub async fn summarize_text(body: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let api_key = env::var("GROQ_API_KEY").map_err(|_| {
-        "GROQ_API_KEY environment variable not set. Please set it before running summarize."
-    })?;
-
+    let api_key = get_or_prompt_groq_key()?;
     let client = reqwest::Client::new();
     let system_prompt = "You are a concise AI assistant. Summarize the provided text into a clean, well-formatted Markdown summary with key takeaways.";
 
