@@ -3,11 +3,12 @@ use colored::Colorize;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::env;
+use std::path::Path;
 
 mod config;
 mod api;
 use api::summarize_text;
-use config::{save_config, load_config, get_config_path};
+use config::{save_config, load_config, get_config_path, clear_groq_key};
 
 //------CLI
 #[derive(Parser)]
@@ -62,10 +63,30 @@ fn list_md_files(dir: &str) -> io::Result<()> {
     Ok(())
 }
 
+fn sanitize_filename(title: &str) -> String {
+    let cleaned: String = title
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
+            c if c.is_control() => ' ',
+            c => c,
+        })
+        .collect();
+
+    let trimmed = cleaned.trim().trim_matches('.');
+
+    if trimmed.is_empty() {
+        "untitled".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 fn create_md_note(dir: &str, title: &str, body: &str, tags: Option<Vec<String>>) -> io::Result<()> {
     fs::create_dir_all(dir)?;
 
-    let filename = format!("{}\\{}.md", dir, title);
+    let safe_title = sanitize_filename(title);
+    let filename = Path::new(dir).join(format!("{}.md", safe_title));
     let mut file = File::create(&filename)?;
 
     let formatted_tags = match tags {
@@ -76,7 +97,7 @@ fn create_md_note(dir: &str, title: &str, body: &str, tags: Option<Vec<String>>)
     let content = format!("# {}\n\n{}\n\n{}\n", title, formatted_tags, body);
     file.write_all(content.as_bytes())?;
 
-    println!("\nCreated: {}", filename.green());
+    println!("\nCreated: {}", filename.display().to_string().green());
     Ok(())
 }
 
@@ -88,6 +109,10 @@ fn read_from_stdin() -> io::Result<String> {
 }
 
 fn uninstall_cli() -> io::Result<()> {
+    if let Err(e) = clear_groq_key() {
+        eprintln!("Note: Could not clear keyring entry {}", e);
+    }
+
     if let Ok(config_path) = get_config_path() {
         if let Some(config_dir) = config_path.parent() {
             if config_dir.exists() {
@@ -142,7 +167,7 @@ async fn main() -> io::Result<()> {
             };
 
             if summarize {
-                println!("{}", "Generating summary with Groq...".yellow());
+                println!("{}", "\nGenerating summary with Groq...".yellow());
                 match summarize_text(&content_body).await {
                     Ok(summary) => {
                         content_body = format!(

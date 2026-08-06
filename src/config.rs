@@ -1,16 +1,21 @@
 use colored::Colorize;
+use dialoguer::Password;
+use keyring::Entry;
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+const KEYRING_SERVICE: &str = "notes-cli";
+const KEYRING_USER: &str = "groq_api_key";
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub destination_path: String,
-    pub groq_api_key: Option<String>,
 }
 
-pub fn get_config_dir() -> io::Result<PathBuf> {
+fn get_config_dir() -> io::Result<PathBuf> {
     let mut path = dirs::config_dir().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
@@ -29,24 +34,15 @@ pub fn get_config_path() -> io::Result<PathBuf> {
 }
 
 pub fn save_config(config: &Config) -> io::Result<()> {
-    let config_dir = get_config_dir()?;
-    let config_path = config_dir.join("config.json");
-    let env_path = config_dir.join(".env");
-
+    let config_path = get_config_path()?;
     let json = serde_json::to_string_pretty(&config)?;
     fs::write(config_path, json)?;
-
-    if let Some(key) = &config.groq_api_key {
-        let env_content = format!("GROQ_API_KEY={}\n", key);
-        fs::write(env_path, env_content)?;
-    }
     Ok(())
 }
 
 pub fn load_config() -> Config {
     let default_config = Config {
         destination_path: "D:/Notes".to_string(),
-        groq_api_key: None,
     };
 
     let Ok(config_path) = get_config_path() else {
@@ -58,23 +54,85 @@ pub fn load_config() -> Config {
     serde_json::from_str(&content).unwrap_or(default_config)
 }
 
-pub fn get_or_prompt_groq_key() -> io::Result<String> {
-    let mut config = load_config();
+const MAX_KEY_ATTEMPTS: u8 = 3;
 
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let api_key = input.trim().to_string();
-
-    if api_key.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Api Cannot be empty.",
-        ));
+pub fn get_or_prompt_groq_key() -> Result<String, Box<dyn std::error::Error>> {
+    if let Ok(env_key) = env::var("GROQ_API_KEY") {
+        if !env_key.trim().is_empty() {
+            return Ok(env_key.trim().to_string());
+        }
     }
 
-    config.groq_api_key = Some(api_key.clone());
-    save_config(&config)?;
-    println!("{}", "Groq API key saved successfully!".green());
+    let keyring_entry = Entry::new(KEYRING_SERVICE, KEYRING_USER).ok();
 
-    Ok(api_key)
+    if let Some(entry) = &keyring_entry {
+        if let Ok(stored_key) = entry.get_password() {
+            if !stored_key.trim().is_empty() {
+                return Ok(stored_key);
+            }
+        }
+    }
+
+    for attempt in 1..=MAX_KEY_ATTEMPTS {
+        let prompt_result = Password::new()
+            .with_prompt("Enter your Groq API key")
+            .interact();
+
+        let raw_key = match prompt_result {
+            Ok(key) => key,
+
+            Err(e) => {
+                return Err(format!("Could not read API key from input (is this running in a non-interactive shell?): {}",e).into());
+            }
+        };
+
+        let trimmed_key = raw_key.trim().to_string();
+
+        if trimmed_key.is_empty() {
+            eprintln!(
+                "{}",
+                format!("API key cannot be empty. ({}/{} attempts)", attempt, MAX_KEY_ATTEMPTS).red()
+            );
+
+            continue;
+        }
+
+        if !trimmed_key.starts_with("gsk_") {
+            eprintln!(
+                "{}","Warning: Groq API keys usually start with 'gsk_'. Continuing anyway.".yellow()
+            );
+        }
+
+        if let Some(entry) = &keyring_entry {
+            match entry.set_password(&trimmed_key) {
+                Ok(_) => println!(
+                    "{}",
+                    "Groq API key securely saved to OS Keychain/Credential Manager!".green()
+                ),
+
+                Err(e) => eprintln!(
+                    "{}: {}","Warning: could not save key to OS keychain, you'll be asked again next run".yellow(),e
+                ),
+            }
+        } else {
+            eprintln!(
+                "{}","Warning: OS keychain unavailable, key will not persist between runs.".yellow()
+            );
+        }
+
+        return Ok(trimmed_key);
+    }
+
+    Err(format!(
+        "No valid API key provided after {} attempts.",
+        MAX_KEY_ATTEMPTS
+    ).into())
+}
+
+pub fn clear_groq_key() -> Result<(), Box<dyn std::error::Error>> {
+    let keyring_entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
+
+    let _ = keyring_entry.delete_password();
+
+    Ok(())
 }

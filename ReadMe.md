@@ -20,6 +20,8 @@ A command-line interface tool written in Rust designed to create and manage Mark
 
 * **Self-Cleaner:** Built-in `uninstall` command to remove user config directories and binary files.
 
+* **Cross-Platform File Handling:** Note filenames are built with the OS-native path separator and sanitized against characters that aren't valid in filenames (`/ \ : * ? " < > |`), so notes save correctly on Windows, macOS, and Linux even if the title contains unusual characters.
+
 
 
 ---
@@ -164,3 +166,37 @@ Configurations are stored automatically in JSON format under the OS standard con
 }
 
 ```
+## How to Get a Groq API KeyTo use the AI
+
+To use the AI summarization feature (-s or --summarize), you will need a free API key from Groq:  
+
+1. Sign Up: Go to console.groq.com and create a free account.
+2. Navigate to API Keys: Once logged in, select API Keys from the sidebar menu.
+3. Create Key: Click Create API Key, give it a name (e.g., notes-cli), and copy the generated key string (it typically starts with gsk_).
+4. Usage in Notes-CLI: The first time you run an add command with the --summarize or -s flag, notes-cli will prompt you to paste your API key. Once entered, it will save it locally to your configuration for future uses.
+
+---
+
+## API Key Storage & Error Handling
+
+`notes-cli` looks for your Groq API key in this order:
+
+1. The `GROQ_API_KEY` environment variable, if set and non-empty.
+2. The OS keychain / credential manager (macOS Keychain, Windows Credential Manager, or the Linux Secret Service), if a key was saved on a previous run.
+3. An interactive prompt, if neither of the above has a key.
+
+**Entering a key:**
+* If you press Enter without typing anything, you'll be re-prompted — up to 3 attempts — instead of the command failing outright.
+* Keys are expected to start with `gsk_`. If yours doesn't, `notes-cli` warns you but still lets you continue (in case Groq's key format changes).
+* If the OS keychain isn't available (e.g. some headless Linux/CI environments), `notes-cli` warns you and continues without persisting the key — you'll just be asked again on your next run.
+
+**If Groq rejects the key:**
+* A `401 Unauthorized` response means the stored key is invalid or expired. `notes-cli` automatically clears it from the keychain and tells you to re-run the command so you can enter a fresh one — you won't get stuck retrying a bad cached key forever.
+* A `429` response means you've hit Groq's rate limit; wait a moment and try again.
+* Other API errors are shown with Groq's own error message where available.
+
+**Network issues:**
+* Requests to Groq time out after 30 seconds rather than hanging indefinitely.
+* Connection failures and timeouts are reported with a specific message so you know whether it's a connectivity issue rather than a bad key.
+
+**Note:** if `--summarize` fails for any reason, `notes-cli` still creates your note — it just skips the AI summary and prints the error to the console, so you never lose a transcript or note body because of an API problem.
