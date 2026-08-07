@@ -8,7 +8,7 @@ use std::path::Path;
 mod config;
 mod api;
 use api::summarize_text;
-use config::{save_config, load_config, get_config_path, clear_groq_key};
+use config::{save_config, load_config, get_config_path, clear_groq_key, set_groq_key};
 
 //------CLI
 #[derive(Parser)]
@@ -44,7 +44,13 @@ enum Commands {
 
     /// Set and persist the default output path
     SetPath { path: String },
-    
+
+    /// Explicitly set and persist your Groq API key (no interactive prompt required)
+    SetKey { key: String },
+
+    /// Remove the stored Groq API key from the OS keychain
+    ClearKey,
+
     /// Completely uninstall notes-cli and remove user configurations
     Uninstall,
 }
@@ -82,6 +88,20 @@ fn sanitize_filename(title: &str) -> String {
     }
 }
 
+fn sanitize_tags(tags: Option<Vec<String>>) -> Option<Vec<String>> {
+    let cleaned: Vec<String> = tags?
+        .into_iter()
+        .map(|tag| tag.trim().to_string())
+        .filter(|tag| !tag.is_empty())
+        .collect();
+
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
 fn create_md_note(dir: &str, title: &str, body: &str, tags: Option<Vec<String>>) -> io::Result<()> {
     fs::create_dir_all(dir)?;
 
@@ -90,7 +110,10 @@ fn create_md_note(dir: &str, title: &str, body: &str, tags: Option<Vec<String>>)
     let mut file = File::create(&filename)?;
 
     let formatted_tags = match tags {
-        Some(t) => format!("tags: [[{}]]", t.join(", ")),
+        Some(t) => {
+            let wikilinks: Vec<String> = t.iter().map(|tag| format!("[[{}]]", tag)).collect();
+            format!("tags: {}", wikilinks.join(", "))
+        }
         None => "tags: none".to_string(),
     };
 
@@ -152,6 +175,18 @@ async fn main() -> io::Result<()> {
             save_config(&config)?;
             println!("Default path saved as: {}", path.green());
         }
+        Commands::SetKey { key } => {
+            if let Err(e) = set_groq_key(&key) {
+                eprintln!("{}: {}", "Failed to save API key".red(), e);
+            }
+        }
+        Commands::ClearKey => {
+            if let Err(e) = clear_groq_key() {
+                eprintln!("{}: {}", "Failed to clear API key".red(), e);
+            } else {
+                println!("{}", "Stored Groq API key cleared.".green());
+            }
+        }
         Commands::Add {
             title,
             body,
@@ -181,6 +216,8 @@ async fn main() -> io::Result<()> {
                     }
                 }
             }
+
+            let tags = sanitize_tags(tags);
 
             create_md_note(&output_dir, &title, &content_body, tags)?;
 

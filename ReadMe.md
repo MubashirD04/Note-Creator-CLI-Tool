@@ -6,7 +6,7 @@ A command-line interface tool written in Rust designed to create and manage Mark
 
 ## Features
 
-* **Obsidian Integration:** Creates Markdown files with internal link tag formatting (`tags: [[tag1, tag2]]`).
+* **Obsidian Integration:** Creates Markdown files with internal link tag formatting — each tag becomes its own wikilink (`tags: [[tag1]], [[tag2]]`).
 
 
 * **AI Summarization:** Uses Groq API (`llama-3.1-8b-instant`) to auto-summarize input text or transcripts.
@@ -56,7 +56,42 @@ notes-cli set-path "D:/ObsidianVault/Notes"
 
 ---
 
-### 2. Add a Note
+### 2. Set Groq API Key
+
+Explicitly save your Groq API key without going through the interactive prompt. This is the way to go if you're running `notes-cli` somewhere without a real terminal to prompt in (a script, CI, an IDE "run" button, `docker exec` without `-it`, etc.) — in those environments the interactive prompt used by `add -s` can't ask you anything and will just fail.
+
+```bash
+notes-cli set-key <KEY>
+
+```
+
+**Example:**
+
+```bash
+notes-cli set-key gsk_abc123yourkeyhere
+
+```
+
+This saves the key to the same OS Keychain/Credential Manager location the interactive prompt uses, so once it's set this way you won't be prompted again. You can also skip persistence entirely and just set the `GROQ_API_KEY` environment variable for the current shell/session — see [API Key Storage & Error Handling](#api-key-storage--error-handling) below for the full lookup order.
+
+> **Note:** the key you pass to `set-key` will be visible in your shell history and in process listings (e.g. `ps`) while the command runs. If that's a concern on a shared machine, prefer the interactive `add -s` prompt or the `GROQ_API_KEY` environment variable instead.
+
+---
+
+### 3. Clear Groq API Key
+
+Remove the stored Groq API key from the OS keychain without replacing it.
+
+```bash
+notes-cli clear-key
+
+```
+
+You normally won't need this — `notes-cli` automatically detects and clears an empty or corrupted stored key (e.g. one containing stray control characters) and re-prompts you in the same run — but it's there as a manual reset if you ever want one.
+
+---
+
+### 4. Add a Note
 
 Creates a new `.md` note in the configured destination path or a specified custom directory.
 
@@ -69,7 +104,7 @@ notes-cli add <TITLE> [BODY] [FLAGS]
 
 | Flag / Option | Type | Description |
 | --- | --- | --- |
-| `-t`, `--tags` | List | Comma-separated list of tags (up to 5). Formatted as `tags: [[tag1, tag2]]`.|
+| `-t`, `--tags` | List | Comma-separated list of tags (up to 5). Each tag is wrapped in its own Obsidian wikilink: `tags: [[tag1]], [[tag2]]` — not one link around the whole list. Whitespace around each tag is trimmed automatically, so `-t "rust, coding, notes"` and `-t rust,coding,notes` produce the same clean tags, and any empty entries from stray/double commas are dropped.|
 | `-p`, `--path` | String | Override the default output folder for this note only.|
 | `-s`, `--summarize` | Flag | Calls Groq AI to generate a summary at the top of the note.|
 
@@ -88,6 +123,14 @@ notes-cli add "Meeting Notes" "Discussed Q3 roadmaps and budget allocations."
 
 ```bash
 notes-cli add "Rust Memory Model" "Ownership and borrowing are key concepts." -t rust,coding,notes
+
+```
+
+**Note with Spaced Tags:**
+Tags are trimmed automatically, so it doesn't matter whether you leave spaces after the commas.
+
+```bash
+notes-cli add "Rust Memory Model" "Ownership and borrowing are key concepts." -t "rust, coding, notes"
 
 ```
 
@@ -119,7 +162,7 @@ notes-cli add "Podcast Highlights" "Today we discussed artificial intelligence..
 ```markdown
 # Podcast Highlights
 
-tags: [[ai, podcast]]
+tags: [[ai]], [[podcast]]
 
 ## Summary
 - Key takeaway 1...
@@ -134,7 +177,7 @@ Today we discussed artificial intelligence...
 
 ---
 
-### 3. Uninstall
+### 5. Uninstall
 
 Removes user configuration files (located at `~/.config/notes-cli` or system equivalent) and removes the installed executable binary.
 
@@ -161,11 +204,13 @@ Configurations are stored automatically in JSON format under the OS standard con
 
 ```json
 {
-  "destination_path": "D:/ObsidianVault/Notes",
-  "groq_api_key": "gsk_..."
+  "destination_path": "D:/ObsidianVault/Notes"
 }
 
 ```
+
+Your Groq API key is **not** stored in this file — it lives in your OS's native credential store (macOS Keychain, Windows Credential Manager, or the Linux Secret Service), which is more secure than a plaintext JSON file. See [API Key Storage & Error Handling](#api-key-storage--error-handling) below for exactly how and where it's kept.
+
 ## How to Get a Groq API KeyTo use the AI
 
 To use the AI summarization feature (-s or --summarize), you will need a free API key from Groq:  
@@ -173,7 +218,7 @@ To use the AI summarization feature (-s or --summarize), you will need a free AP
 1. Sign Up: Go to console.groq.com and create a free account.
 2. Navigate to API Keys: Once logged in, select API Keys from the sidebar menu.
 3. Create Key: Click Create API Key, give it a name (e.g., notes-cli), and copy the generated key string (it typically starts with gsk_).
-4. Usage in Notes-CLI: The first time you run an add command with the --summarize or -s flag, notes-cli will prompt you to paste your API key. Once entered, it will save it locally to your configuration for future uses.
+4. Usage in Notes-CLI: Either run `notes-cli set-key <KEY>` directly, or just run an `add` command with `--summarize`/`-s` — if no key is found, you'll be prompted to paste one interactively. Either way, it's saved for future runs.
 
 ---
 
@@ -182,16 +227,18 @@ To use the AI summarization feature (-s or --summarize), you will need a free AP
 `notes-cli` looks for your Groq API key in this order:
 
 1. The `GROQ_API_KEY` environment variable, if set and non-empty.
-2. The OS keychain / credential manager (macOS Keychain, Windows Credential Manager, or the Linux Secret Service), if a key was saved on a previous run.
-3. An interactive prompt, if neither of the above has a key.
+2. The OS keychain / credential manager (macOS Keychain, Windows Credential Manager, or the Linux Secret Service), if a key was saved previously — either via `notes-cli set-key <KEY>` or a prior interactive prompt.
+3. An interactive prompt, if none of the above has a key. **This requires a real terminal (TTY).** If you're running `notes-cli` from a script, CI, or anywhere else without one, this step will fail — use `notes-cli set-key <KEY>` or the `GROQ_API_KEY` environment variable instead.
 
 **Entering a key:**
-* If you press Enter without typing anything, you'll be re-prompted — up to 3 attempts — instead of the command failing outright.
+* Via `notes-cli set-key <KEY>`: saved immediately without being tested against the API — this is a deliberate, explicit action, so it's trusted as-is. Useful for non-interactive environments.
+* Via the interactive prompt (triggered automatically by `add -s` when no key is found): if you press Enter without typing anything, you'll be re-prompted — up to 3 attempts — instead of the command failing outright. **A key entered this way is only written to the OS keychain after Groq actually accepts it** — you won't see a "saved" message, and nothing gets persisted, for a key that turns out to be invalid.
 * Keys are expected to start with `gsk_`. If yours doesn't, `notes-cli` warns you but still lets you continue (in case Groq's key format changes).
 * If the OS keychain isn't available (e.g. some headless Linux/CI environments), `notes-cli` warns you and continues without persisting the key — you'll just be asked again on your next run.
 
 **If Groq rejects the key:**
-* A `401 Unauthorized` response means the stored key is invalid or expired. `notes-cli` automatically clears it from the keychain and tells you to re-run the command so you can enter a fresh one — you won't get stuck retrying a bad cached key forever.
+* A `401 Unauthorized` response means the key is invalid or expired. If it came from the keychain, `notes-cli` clears it; either way it immediately re-prompts you for a new one **in the same run** (up to 2 attempts total) — you won't need to re-run the command, and nothing invalid stays cached.
+* A corrupted or malformed key (e.g. containing stray control characters, which can otherwise cause a confusing "failed to parse header value" error) is detected and rejected the same way, before it ever reaches the network.
 * A `429` response means you've hit Groq's rate limit; wait a moment and try again.
 * Other API errors are shown with Groq's own error message where available.
 

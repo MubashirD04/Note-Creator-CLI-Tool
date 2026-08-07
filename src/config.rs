@@ -56,10 +56,17 @@ pub fn load_config() -> Config {
 
 const MAX_KEY_ATTEMPTS: u8 = 3;
 
-pub fn get_or_prompt_groq_key() -> Result<String, Box<dyn std::error::Error>> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeySource {
+    Env,
+    Keychain,
+    Prompt,
+}
+
+pub fn get_or_prompt_groq_key() -> Result<(String, KeySource), Box<dyn std::error::Error>> {
     if let Ok(env_key) = env::var("GROQ_API_KEY") {
         if !env_key.trim().is_empty() {
-            return Ok(env_key.trim().to_string());
+            return Ok((env_key.trim().to_string(), KeySource::Env));
         }
     }
 
@@ -67,8 +74,9 @@ pub fn get_or_prompt_groq_key() -> Result<String, Box<dyn std::error::Error>> {
 
     if let Some(entry) = &keyring_entry {
         if let Ok(stored_key) = entry.get_password() {
-            if !stored_key.trim().is_empty() {
-                return Ok(stored_key);
+            let trimmed_stored = stored_key.trim().to_string();
+            if !trimmed_stored.is_empty() {
+                return Ok((trimmed_stored, KeySource::Keychain));
             }
         }
     }
@@ -103,24 +111,7 @@ pub fn get_or_prompt_groq_key() -> Result<String, Box<dyn std::error::Error>> {
             );
         }
 
-        if let Some(entry) = &keyring_entry {
-            match entry.set_password(&trimmed_key) {
-                Ok(_) => println!(
-                    "{}",
-                    "Groq API key securely saved to OS Keychain/Credential Manager!".green()
-                ),
-
-                Err(e) => eprintln!(
-                    "{}: {}","Warning: could not save key to OS keychain, you'll be asked again next run".yellow(),e
-                ),
-            }
-        } else {
-            eprintln!(
-                "{}","Warning: OS keychain unavailable, key will not persist between runs.".yellow()
-            );
-        }
-
-        return Ok(trimmed_key);
+        return Ok((trimmed_key, KeySource::Prompt));
     }
 
     Err(format!(
@@ -129,10 +120,42 @@ pub fn get_or_prompt_groq_key() -> Result<String, Box<dyn std::error::Error>> {
     ).into())
 }
 
+pub fn persist_verified_key(key: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let keyring_entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
+    keyring_entry.set_password(key)?;
+    println!(
+        "{}",
+        "Groq API key verified and securely saved to OS Keychain/Credential Manager!".green()
+    );
+    Ok(())
+}
+
+pub fn set_groq_key(key: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let trimmed_key = key.trim();
+
+    if trimmed_key.is_empty() {
+        return Err("API key cannot be empty.".into());
+    }
+
+    if !trimmed_key.starts_with("gsk_") {
+        eprintln!(
+            "{}",
+            "Warning: Groq API keys usually start with 'gsk_'. Saving anyway.".yellow()
+        );
+    }
+
+    let keyring_entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
+    keyring_entry.set_password(trimmed_key)?;
+    println!(
+        "{}",
+        "Groq API key securely saved to OS Keychain/Credential Manager!".green()
+    );
+
+    Ok(())
+}
+
 pub fn clear_groq_key() -> Result<(), Box<dyn std::error::Error>> {
     let keyring_entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
-
     let _ = keyring_entry.delete_password();
-
     Ok(())
 }
