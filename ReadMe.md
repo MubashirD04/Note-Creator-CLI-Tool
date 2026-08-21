@@ -9,7 +9,7 @@ A command-line interface tool written in Rust designed to create and manage Mark
 * **Obsidian Integration:** Creates Markdown files with internal link tag formatting — each tag becomes its own wikilink (`tags: [[tag1]], [[tag2]]`).
 
 
-* **AI Summarization:** Uses Groq API (`llama-3.1-8b-instant`) to auto-summarize input text or transcripts.
+* **AI Summarization:** Uses Groq API (`openai/gpt-oss-20b`) to auto-summarize input text or transcripts.
 
 
 * **Configurable Paths:** Save your default Obsidian vault directory to avoid typing paths repeatedly.
@@ -150,7 +150,7 @@ notes-cli add "Lecture Transcript" --tags lecture,university
 ```
 
 **AI Summarization (`--summarize` / `-s`):**
-Summarizes input using the Groq API (`llama-3.1-8b-instant`). If no API key is stored, you will be prompted to enter your Groq API key on first use.
+Summarizes input using the Groq API (`openai/gpt-oss-20b`). If no API key is stored, you will be prompted to enter your Groq API key on first use.
 
 ```bash
 notes-cli add "Podcast Highlights" "Today we discussed artificial intelligence..." -s -t ai,podcast

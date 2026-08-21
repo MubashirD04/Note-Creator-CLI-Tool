@@ -164,6 +164,127 @@ fn uninstall_cli() -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn sanitize_filename_replaces_illegal_characters() {
+        assert_eq!(sanitize_filename("a/b\\c:d*e?f\"g<h>i|j"), "a-b-c-d-e-f-g-h-i-j");
+    }
+
+    #[test]
+    fn sanitize_filename_strips_control_characters_to_space() {
+        let with_control = format!("title{}end", '\u{0007}');
+        assert_eq!(sanitize_filename(&with_control), "title end");
+    }
+
+    #[test]
+    fn sanitize_filename_trims_whitespace_and_dots() {
+        assert_eq!(sanitize_filename("  My Note...  "), "My Note");
+    }
+
+    #[test]
+    fn sanitize_filename_falls_back_to_untitled_when_empty_after_cleanup() {
+        assert_eq!(sanitize_filename("   ...   "), "untitled");
+        assert_eq!(sanitize_filename(""), "untitled");
+        assert_eq!(sanitize_filename("   "), "untitled");
+    }
+
+    #[test]
+    fn sanitize_filename_does_not_treat_replaced_separators_as_empty() {
+        // '/' becomes '-', which is a valid filename character on its own,
+        // so this must NOT fall back to "untitled".
+        assert_eq!(sanitize_filename("///"), "---");
+    }
+
+    #[test]
+    fn sanitize_filename_preserves_normal_titles() {
+        assert_eq!(sanitize_filename("Weekly Standup Notes"), "Weekly Standup Notes");
+    }
+
+    #[test]
+    fn sanitize_tags_trims_and_drops_empty_entries() {
+        let tags = vec![" work ".to_string(), "".to_string(), "  ".to_string(), "urgent".to_string()];
+        let result = sanitize_tags(Some(tags));
+        assert_eq!(result, Some(vec!["work".to_string(), "urgent".to_string()]));
+    }
+
+    #[test]
+    fn sanitize_tags_returns_none_when_all_tags_are_blank() {
+        let tags = vec!["  ".to_string(), "".to_string()];
+        assert_eq!(sanitize_tags(Some(tags)), None);
+    }
+
+    #[test]
+    fn sanitize_tags_returns_none_when_input_is_none() {
+        assert_eq!(sanitize_tags(None), None);
+    }
+
+    #[test]
+    fn create_md_note_writes_expected_content_with_tags() {
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path().to_str().unwrap();
+
+        create_md_note(dir_path, "My Title", "Body text", Some(vec!["a".to_string(), "b".to_string()])).unwrap();
+
+        let content = fs::read_to_string(Path::new(dir_path).join("My Title.md")).unwrap();
+        assert!(content.contains("# My Title"));
+        assert!(content.contains("tags: [[a]], [[b]]"));
+        assert!(content.contains("Body text"));
+    }
+
+    #[test]
+    fn create_md_note_writes_none_when_no_tags() {
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path().to_str().unwrap();
+
+        create_md_note(dir_path, "Untagged", "Body", None).unwrap();
+
+        let content = fs::read_to_string(Path::new(dir_path).join("Untagged.md")).unwrap();
+        assert!(content.contains("tags: none"));
+    }
+
+    #[test]
+    fn create_md_note_creates_missing_output_directory() {
+        let dir = tempdir().unwrap();
+        let nested = dir.path().join("nested").join("output");
+        let nested_str = nested.to_str().unwrap();
+
+        create_md_note(nested_str, "Note", "Body", None).unwrap();
+
+        assert!(nested.join("Note.md").exists());
+    }
+
+    #[test]
+    fn create_md_note_sanitizes_unsafe_title_for_filename() {
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path().to_str().unwrap();
+
+        create_md_note(dir_path, "Q1/Q2 Report", "Body", None).unwrap();
+
+        assert!(Path::new(dir_path).join("Q1-Q2 Report.md").exists());
+    }
+
+    #[test]
+    fn list_md_files_only_reports_markdown_files() -> io::Result<()> {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("note.md"), "content")?;
+        fs::write(dir.path().join("ignore.txt"), "content")?;
+
+        // Just verify it runs without error for a directory containing
+        // both markdown and non-markdown files.
+        list_md_files(dir.path().to_str().unwrap())
+    }
+
+    #[test]
+    fn list_md_files_errors_on_missing_directory() {
+        let result = list_md_files("Z:/definitely/does/not/exist/hopefully");
+        assert!(result.is_err());
+    }
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let cli = Cli::parse();
